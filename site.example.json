@@ -20,9 +20,9 @@
   "webmail": {
     "hostname": "rc.mail.example.com",
     "product_name": "Example Mail",
-    "local_plugins": ["elastic_compact", "login_refresh"],
-    "local_skins": ["elastic_compact"],
-    "compact_skin_source": "~/src/roundcube-elastic-compact"
+    "local_plugins": [],
+    "local_skins": [],
+    "compact_skin_source": ""
   },
   "alerts": {
     "to": "alice@example.com",

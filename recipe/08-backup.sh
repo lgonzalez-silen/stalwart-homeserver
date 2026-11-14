@@ -81,6 +81,15 @@ export RESTIC_CACHE_DIR=/var/cache/restic
 SNAP=/var/lib/stalwart-snap
 rm -rf "$SNAP"
 trap 'systemctl start stalwart' EXIT            # never leave Stalwart stopped
+# the Google module's state (where each pull stopped, what was mirrored/trimmed): without it a restored server
+# would start pulling "from now" and skip mail that arrived after the backup. Copied BEFORE the mail snapshot: a state
+# slightly older than the mail is harmless (Message-IDs catch the overlap); a newer one would claim mail the backup lacks.
+EXTRA=(); STATE_FAILED=
+if [ -f /var/lib/nv-fetch/state.db ]; then
+  if sqlite3 /var/lib/nv-fetch/state.db ".timeout 30000" ".backup /var/backups/nv/nv-fetch-state.db"; then
+    EXTRA=(/var/backups/nv/nv-fetch-state.db)
+  else STATE_FAILED=1; fi
+fi
 t0=$(date +%s.%N)
 systemctl stop stalwart
 cp -a --reflink=always /var/lib/stalwart "$SNAP"
@@ -88,14 +97,6 @@ systemctl start stalwart
 trap - EXIT
 echo "stalwart snapshot: $(echo "$(date +%s.%N) - $t0" | bc) s of downtime"
 sqlite3 /var/lib/roundcube/roundcube.db ".backup /var/backups/nv/roundcube.db"
-# the Google module's state (where each pull stopped, what was mirrored/trimmed): without it a restored server
-# would start pulling "from now" and skip mail that arrived after the backup
-EXTRA=(); STATE_FAILED=
-if [ -f /var/lib/nv-fetch/state.db ]; then
-  if sqlite3 /var/lib/nv-fetch/state.db ".timeout 30000" ".backup /var/backups/nv/nv-fetch-state.db"; then
-    EXTRA=(/var/backups/nv/nv-fetch-state.db)
-  else STATE_FAILED=1; fi
-fi
 restic backup --host nv --tag nightly --no-scan "$SNAP" /var/backups/nv/roundcube.db "${EXTRA[@]}"
 rm -rf "$SNAP"
 # everything else is backed up; fail the run (-> alert) so a missing Google state never goes unnoticed

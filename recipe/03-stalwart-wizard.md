@@ -28,6 +28,10 @@ password (it changes on every bootstrap start).
 
 ## 3. After the wizard (WebUI → Settings)
 
+Log in at **https://<server.hostname>/admin**, through Stalwart's own 443 listener for now (it has a self-signed
+placeholder certificate: accept the browser warning once). The SSH tunnel to port 8080 stops working after the
+wizard ("Unknown client id"): the admin login only works on the public HTTPS address.
+
 - **TLS › Certificates:** new certificate with `certificate` = File `/etc/stalwart/tls/fullchain.pem`
   and `privateKey` = File `/etc/stalwart/tls/privkey.pem`. certbot's deploy hook refreshes those
   files and restarts Stalwart on renewal.

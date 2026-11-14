@@ -10,7 +10,7 @@
 #
 # The only change ever made at Google: UID MOVE from Spam to INBOX, for messages you rescued on the server.
 # usage: nv-spam-mirror [--dry]     (--dry: report what would happen, change nothing anywhere)
-import sys, os, json, re, sqlite3, imaplib, datetime, email, email.policy, urllib.request
+import sys, os, subprocess, json, re, sqlite3, imaplib, datetime, email, email.policy, urllib.request
 
 sys.path.insert(0, "/usr/local/lib/nv"); sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))  # repo copy last
 from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
@@ -162,11 +162,25 @@ def sync(acct, sources, c):
         src, uid = next(iter(at_google[key].items()))
         say(f"[{acct}] new spam from {src} uid {uid} -> {FOLDER}: {key[:40]}")
         if DRY: continue
-        raw, when = g[src].body(uid)
-        e = {"blobId": upload(acct, raw), "mailboxIds": {folder: True}, "keywords": {}}
-        if when: e["receivedAt"] = when
-        r = jmap([["Email/import", {"accountId": acct, "emails": {"x": e}}, "i"]])[0][1]
-        if "x" not in (r.get("created") or {}): raise RuntimeError(f"import failed: {r.get('notCreated')}")
+        try:
+            raw, when = g[src].body(uid)
+            e = {"blobId": upload(acct, raw), "mailboxIds": {folder: True}, "keywords": {}}
+            if when: e["receivedAt"] = when
+            r = jmap([["Email/import", {"accountId": acct, "emails": {"x": e}}, "i"]])[0][1]
+            if "x" not in (r.get("created") or {}): raise RuntimeError(f"import failed: {r.get('notCreated')}")
+        except Exception as ex:
+            # One message that can't be mirrored (e.g. over the size limit) must not hold up the rest. Count the
+            # failure across runs; after 3, record it as skipped and tell the owner once: it's still in Gmail's Spam.
+            tries = 1 + (c.execute("select tries from spam_mirror_fail where acct=? and key=?", (acct, key)).fetchone() or (0,))[0]
+            c.execute("insert or replace into spam_mirror_fail values (?,?,?,?)", (acct, key, tries, now())); c.commit()
+            say(f"[{acct}] could not mirror {key[:40]} (try {tries}): {type(ex).__name__}: {ex}")
+            if tries >= 3:
+                c.execute("insert into spam_mirror values (?,?,?,?,?)", (acct, key, None, "skipped", now())); c.commit()
+                body = (f"One message in {src}'s Google Spam could not be copied to the \"{FOLDER}\" folder after 3 tries\n"
+                        f"and was skipped. It is still in Spam at Google: look for it there before Google deletes it\n"
+                        f"(30 days).\n\nReason: {type(ex).__name__}: {ex}\n")
+                subprocess.run(["/usr/local/sbin/nv-alert", f"spam mirror skipped a message: {src}"], input=body.encode())
+            continue
         c.execute("insert into spam_mirror values (?,?,?,?,?)", (acct, key, r["created"]["x"]["id"], "mirrored", now()))
         c.commit()
     c.commit()
@@ -178,5 +192,6 @@ def sync(acct, sources, c):
 if __name__ == "__main__":
     c = sqlite3.connect(STATE, timeout=30)
     c.execute("create table if not exists spam_mirror (acct text, key text, nv_id text, status text, at text, primary key (acct, key))")
+    c.execute("create table if not exists spam_mirror_fail (acct text, key text, tries int, at text, primary key (acct, key))")
     for acct, sources in GROUPS.items():
         sync(acct, sources, c)
