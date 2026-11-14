@@ -22,7 +22,12 @@ live && { [ -s "$CREDS" ] || { echo "missing $CREDS (see header)"; exit 1; }; }
 chmod 600 "$CREDS"
 
 echo "== certbot + cloudflare plugin"
-dnf -y -q install certbot python3-certbot-dns-cloudflare
+# From the EPEL repository of THIS OS minor version (epel-10.2 on AlmaLinux 10.2): plain "epel" follows RHEL's
+# newest minor, and right after a RHEL release its certbot needs libraries AlmaLinux doesn't have yet (seen
+# 2026-11-14: EPEL built for 10.3, AlmaLinux still 10.2, install fails on python3-cryptography).
+OSV=$(. /etc/os-release; echo "$VERSION_ID")
+dnf -y -q --setopt=epel.baseurl= --setopt="epel.metalink=https://mirrors.fedoraproject.org/metalink?repo=epel-$OSV&arch=$(uname -m)" \
+  install certbot python3-certbot-dns-cloudflare
 
 echo "== issue (or keep) $CERT + *.$CERT ${NV_CERTS_EXTRA_NAMES:-}"
 certbot certonly -n --agree-tos --register-unsafely-without-email \

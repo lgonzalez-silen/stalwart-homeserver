@@ -28,7 +28,7 @@ network: {config: disabled}
 EOF
 [ -n "${NV_SERVER_PROVIDER_HOSTNAME:-}" ] && sed -i "/$NV_SERVER_PROVIDER_HOSTNAME/d" /etc/hosts
 add_line /etc/hosts "$PUBLIC_IP	$HOST $SHORT"
-add_line /etc/hosts "$PUBLIC_IP6	$HOST $SHORT"
+[ -n "$PUBLIC_IP6" ] && add_line /etc/hosts "$PUBLIC_IP6	$HOST $SHORT"   # IPv6 only if the server has it
 
 echo "== packages + updates"
 dnf -y -q upgrade
@@ -68,11 +68,23 @@ EOF
 systemctl enable --now unbound
 systemctl restart unbound
 CON=$(nmcli -t -f NAME,DEVICE con show --active | awk -F: '$2=="eth0"{print $1}')
-nmcli con mod "$CON" ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes ipv4.dns-search "" \
-                     ipv6.dns "::1" ipv6.ignore-auto-dns yes ipv6.dns-search ""
+nmcli con mod "$CON" ipv4.dns "127.0.0.1" ipv4.ignore-auto-dns yes ipv4.dns-search ""
+# IPv6 resolver settings only where IPv6 is on (NetworkManager refuses them when ipv6.method=ignore)
+[ "$(nmcli -g ipv6.method con show "$CON")" != ignore ] && \
+  nmcli con mod "$CON" ipv6.dns "::1" ipv6.ignore-auto-dns yes ipv6.dns-search ""
 nmcli con up "$CON" >/dev/null
 # fallback if NM keeps stale search domains
 sed -i '/^search /d' /etc/resolv.conf
+# Some providers' context tools write /etc/resolv.conf themselves, bypassing NetworkManager (OpenNebula's
+# one-context does). Then: NetworkManager keeps out of DNS, the file is written here, and the tool's periodic
+# reconfigure (which would rewrite it) is switched off. First-boot setup by the tool is unaffected.
+if live && ! grep -q '^nameserver 127.0.0.1' /etc/resolv.conf; then
+  printf '[main]\ndns=none\n' | put /etc/NetworkManager/conf.d/90-nv-dns.conf
+  systemctl reload NetworkManager
+  printf 'nameserver 127.0.0.1\n' | put /etc/resolv.conf
+  systemctl disable --now one-context-reconfigure.timer 2>/dev/null || true
+  echo "resolv.conf was managed by something else: now fixed to the local resolver"
+fi
 
 echo "== firewalld (mirror of the provider's firewall)"
 systemctl enable --now firewalld
@@ -89,8 +101,12 @@ echo "== SSH: keys only"
 # Refuse to switch password login off unless root can log in with a key (or you'd be left with the provider console)
 live && { [ -s /root/.ssh/authorized_keys ] && grep -qE '^(ssh-|ecdsa-|sk-)' /root/.ssh/authorized_keys || {
   echo "no SSH key in /root/.ssh/authorized_keys: add yours first (provider panel or ssh-copy-id), then re-run"; exit 1; }; }
-put /etc/ssh/sshd_config.d/10-hardening.conf <<'EOF'
-# Loaded before 50-cloud-init.conf, so these win (first match applies)
+# sshd uses the FIRST value it reads, and provider images drop their own files in here (00-togglebox.conf with
+# "PasswordAuthentication yes" on one, 50-cloud-init.conf on others). Ours sorts first, and the effective settings
+# are checked below, so a file that still wins can't leave password login on silently.
+rm -f /etc/ssh/sshd_config.d/10-hardening.conf   # this file's old name
+put /etc/ssh/sshd_config.d/00-hardening.conf <<'EOF'
+# Read before the provider's files (first match applies); recipe/01 checks the result with sshd -T
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
@@ -99,6 +115,15 @@ MaxAuthTries 4
 EOF
 sshd -t
 systemctl reload sshd
+if live; then
+  eff=$(sshd -T 2>/dev/null)
+  if ! grep -qx "passwordauthentication no" <<<"$eff" || ! grep -qxE "permitrootlogin (prohibit-password|without-password)" <<<"$eff"; then
+    echo "SSH is NOT keys-only: another file wins. Files that set it:"
+    grep -HnE "^\s*(PasswordAuthentication|PermitRootLogin)" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf
+    echo "Remove or rename the overriding file (keep a fresh SSH session open), then re-run."; exit 1
+  fi
+  echo "SSH effective: $(grep -E '^(passwordauthentication|permitrootlogin)' <<<"$eff" | tr '\n' ' ')"
+fi
 
 echo "== persistent journal (keep history across reboots)"
 mkdir -p /var/log/journal /etc/systemd/journald.conf.d
