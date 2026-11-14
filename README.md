@@ -121,8 +121,9 @@ Order matters. Each recipe's header says what it needs and what to check afterwa
 
 ## Running it
 
-Most days you do nothing: updates, backups, certificate renewals and checks run on timers, and you get mail only
-when something needs you. The [operations guide](docs/operations.md) covers what runs when, what each alert means,
+Most days you do nothing: updates, backups, certificate renewals and checks run on timers. `./nv status` shows
+everything that could need attention in one place (with `--html`, a local page with trend lines), and you get mail
+only when something needs action soon. The [operations guide](docs/operations.md) covers what runs when, what each alert means,
 everyday tasks (users, passwords, domains), upgrades and restores. [`docs/stalwart-notes.md`](docs/stalwart-notes.md)
 collects Stalwart behaviour worth knowing.
 

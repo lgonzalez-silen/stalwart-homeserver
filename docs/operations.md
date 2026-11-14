@@ -1,8 +1,17 @@
 # Operations guide
 
 How a server built from these recipes runs day to day, what it tells you, and how to do the common jobs. The short
-version: it looks after itself, it mails you only when something needs you, and every change you make goes through
-the repo (edit, render, diff, run).
+version: it looks after itself, `./nv status` shows you everything in one place, it mails you only when something
+needs action soon, and every change you make goes through the repo (edit, render, diff, run).
+
+## The dashboard: `./nv status`
+
+Run it on your computer any time. It shows every check (backups, certificates, disk, Stalwart, OS updates, each
+Google pull, Junk per account, login bans, new releases) as OK, WARN or CRIT, newest problems first.
+`./nv status --html` opens the same as a page with 14-day trend lines. The data comes from `nv-status` on the server
+(every 15 minutes, kept 90 days in `/var/lib/nv-status/`), fetched over SSH: nothing is published on the web.
+
+Look at it now and then (weekly is plenty), and whenever something feels off.
 
 ## What runs on its own
 
@@ -13,10 +22,11 @@ the repo (edit, render, diff, run).
 | 03:15 nightly | `nv-backup`: Stalwart stopped ~2 s for a snapshot, then upload to B2; weekly prune on Sundays | only on failure |
 | early morning | `dnf-automatic`: OS security updates, reboot when an update needs one | only on failure |
 | twice a day | `certbot-renew`: certificates renew ~30 days before expiry; nginx and Stalwart reload | only on failure |
-| 13:00 daily | `nv-junk-report`: watches each account's Junk; prunes Junk of `junk_report.detail_accounts` | only on a spike |
+| every 15 min | `nv-status`: the dashboard's checks | when a critical check turns bad or recovers (below) |
+| 13:00 daily | `nv-junk-report`: prunes Junk of `junk_report.detail_accounts` (spikes show on the dashboard) | only on failure |
 | Sun 14:00 | `nv-google-trim` (Google module, only sources with `keep_days`) | on failure, or more than 20 messages Google refuses to move (fewer are logged and skipped) |
-| Mon 14:00 | `nv-release-check`: Stalwart, Roundcube, identity_smtp, restic | once per new upstream version |
-| 1st, 05:00 | `nv-backup-check`: verifies the backup repository and re-reads 10% of it | always (a monthly report) |
+| Mon 14:00 | `nv-release-check`: Stalwart, Roundcube, identity_smtp, restic | no mail: new versions show on the dashboard |
+| 1st, 05:00 | `nv-backup-check`: verifies the backup repository and re-reads 10% of it | only if it finds a problem |
 
 A failed run of any of the timer jobs puts an alert straight into `alerts.to`'s Inbox (`OnFailure=nv-alert@...`,
 delivered through Stalwart's API so it can't land in Junk; plain SMTP is the fallback). Two exceptions, on purpose:
@@ -29,16 +39,15 @@ in a row, at most once a day.
 | Subject | Meaning | Do |
 |---|---|---|
 | `[nv] FAILED: nv-backup.service` | last night's backup didn't finish | `journalctl -u nv-backup -n 50`; usually B2 or the network. Run `systemctl start nv-backup` once it's fixed. Two missed nights in a row is worth fixing the same day |
-| `[nv] monthly backup check: ...` | the monthly report | read it: "no errors were found" is the line that matters |
-| `[nv] updates available: <software>` | a new upstream version | read the release notes (all of them since your version), then follow the upgrade section below. Security releases: soon. Others: when convenient |
-| `[nv] Junk SPIKE: <account>` | an account's Junk jumped above 3x its 7-day average (and at least 10) | `nv-junk-report --show` on the server; usually a spam wave, sometimes a sender wrongly caught |
+| `[nv] ATTENTION: <check>` | a critical check turned bad: Stalwart not running, disk over 90%, a certificate under 14 days, no good backup for 48 h, or a Google pull silent for 6 h | `./nv status` for the detail; the line tells you where to look |
+| `[nv] recovered: <check>` | the same check is fine again | nothing |
+| `[nv] monthly backup check: FAILED ...` | the monthly verify found a problem | read the report it contains; run `restic check` by hand on the server |
 | `[nv] mail pull failing: <source>` | a Google account stopped pulling (often a revoked app password after a Google password change) | new app password, then `ssh -t root@<server> nv-fetch-secret <source>`. Mail waits at Google meanwhile |
 | `[nv] mail pull skipped a message: <source>` | one message was refused (usually over `mail.max_message_mb`) | read it in Google's web mail; nothing else is blocked |
 | `[nv] FAILED: dnf-automatic.service` | OS updates didn't install | `journalctl -u dnf-automatic -n 50`; often a mirror hiccup that fixes itself the next day |
 | `[nv] FAILED: <unit>` (anything else) | that timer's run failed; the alert includes its last 40 log lines | read them, fix, then re-run it by hand: `systemctl start <unit>` |
 
-If you go a long time without any mail from the server, check it's still able to send one: the monthly backup
-report is the heartbeat.
+Quiet is normal now. `./nv status` is how you check that quiet means "fine".
 
 ## Everyday jobs
 
