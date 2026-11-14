@@ -15,7 +15,9 @@
 #        nv-fetch --status        show watermarks and counts
 import sys, os, json, time, sqlite3, imaplib, re, email, email.policy, datetime, threading, subprocess, urllib.request, urllib.error, traceback
 
-SITE = json.load(open(os.environ.get("NV_SITE", "/etc/nv/site.json")))   # installed by recipe/09-ops.sh
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
+SITE = site()   # installed by recipe/09-ops.sh
 # google.sources[] in site.json: name, user (Google login), account (Stalwart account id it delivers to),
 # own (addresses whose mail is imported as already read, like a Sieve "own Bcc copies" rule), enabled (default true).
 SOURCES = {s["name"]: {"user": s["user"], "target": s["account"], "own": s.get("own", [s["user"]]),
@@ -27,8 +29,6 @@ HOST = SITE["server"]["hostname"]
 EXCLUDE = '-in:trash -in:spam -in:drafts -in:chats {in:inbox -in:sent}'
 POLL = 60                      # seconds between checks
 STATE = "/var/lib/nv-fetch/state.db"
-KEY = open("/root/.secrets/laptop-api.key").read().strip()
-API = "http://127.0.0.1:8080"
 
 def log(src, *a): print(f"[{src}]", *a, flush=True)
 
@@ -38,12 +38,6 @@ PERMANENT = {"tooLarge", "invalidEmail"}   # JMAP SetError types that are about 
 class Rejected(Exception):
     """Stalwart answered, but refused the message (notCreated)."""
 
-
-def jmap(calls):
-    body = {"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"], "methodCalls": calls}
-    r = urllib.request.Request(API + "/jmap/", data=json.dumps(body).encode(),
-                               headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(r, timeout=60))["methodResponses"]
 
 def db():
     os.makedirs(os.path.dirname(STATE), mode=0o700, exist_ok=True)
@@ -66,11 +60,7 @@ class Source:
         pw = open(f"/root/.secrets/fetch/{self.name}.pw").read().strip()
         m = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=120)
         m.login(self.cfg["user"], pw)
-        allmail = None
-        for line in m.list()[1]:
-            s = line.decode()
-            if "\\All" in s.split(")")[0]:
-                allmail = s.rsplit(' "/" ', 1)[1]
+        allmail = gmail_folders(m, ("\\All",)).get("\\All")
         if not allmail: raise RuntimeError("no \\All mailbox (All Mail hidden from IMAP?)")
         self.allmail = allmail
         self.imap = m
@@ -91,7 +81,7 @@ class Source:
         out = set()
         for i in range(0, len(ids), 500):
             for e in jmap([["Email/get", {"accountId": self.target, "ids": ids[i:i+500], "properties": ["messageId"]}, "g"]])[0][1]["list"]:
-                out.update(m.strip("<> ") for m in (e.get("messageId") or []))
+                out.update(mid(m) for m in (e.get("messageId") or []))
         return out
 
     def load_index(self):
@@ -104,20 +94,19 @@ class Source:
         self.mids = self._mids_of(ids)
         log(self.name, f"index: {len(self.mids)} Message-IDs in account {self.target} ({len(ids)} messages)")
 
-    def exists_on_nv(self, mid):
+    def exists_on_nv(self, msgid):
         if not hasattr(self, "mids"): self.load_index()
-        r = jmap([["Email/changes", {"accountId": self.target, "sinceState": self.state, "maxChanges": 5000}, "c"]])[0][1]
+        # check=False: an error here (e.g. cannotCalculateChanges) just means "reload the index"
+        r = jmap([["Email/changes", {"accountId": self.target, "sinceState": self.state, "maxChanges": 5000}, "c"]], check=False)[0][1]
         if "newState" not in r or r.get("hasMoreChanges"):
             self.load_index()
         else:
             self.mids |= self._mids_of(r["created"] + r["updated"]); self.state = r["newState"]
-        return mid.strip("<> ") in self.mids
+        return mid(msgid) in self.mids
 
     def import_one(self, raw, internaldate, flags):
-        req = urllib.request.Request(f"{API}/jmap/upload/{self.target}/", data=raw,
-                                     headers={"Authorization": "Bearer " + KEY, "Content-Type": "message/rfc822"})
         try:
-            blob = json.load(urllib.request.urlopen(req, timeout=120))["blobId"]
+            blob = upload(self.target, raw)
         except urllib.error.HTTPError as e:
             if e.code in (400, 413): raise Rejected(f"upload refused (HTTP {e.code}, {len(raw)/1e6:.1f} MB): too large?")
             raise

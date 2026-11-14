@@ -12,39 +12,30 @@
 # usage: nv-spam-mirror [--dry]     (--dry: report what would happen, change nothing anywhere)
 import sys, os, json, re, sqlite3, imaplib, datetime, email, email.policy, urllib.request
 
-SITE = json.load(open(os.environ.get("NV_SITE", "/etc/nv/site.json")))   # installed by recipe/09-ops.sh
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
+SITE = site()   # installed by recipe/09-ops.sh
 GROUPS = {}   # target Stalwart account -> Google sources feeding its "Google Spam" folder (google.sources[] in site.json)
 for s in SITE["google"]["sources"]:
     if s.get("spam_mirror", True):
         GROUPS.setdefault(s["account"], {})[s["name"]] = s["user"]
 FOLDER = "Google Spam"
 STATE = "/var/lib/nv-fetch/state.db"
-KEY = open("/root/.secrets/laptop-api.key").read().strip(); API = "http://127.0.0.1:8080"
 DRY = "--dry" in sys.argv
 now = lambda: datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-
-def jmap(calls):
-    body = {"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"], "methodCalls": calls}
-    r = urllib.request.Request(API + "/jmap/", data=json.dumps(body).encode(),
-                               headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(r, timeout=60))["methodResponses"]
 
 def say(*a): print(("DRY " if DRY else "") + " ".join(map(str, a)), flush=True)
 
 def mid_of(raw):
     m = email.message_from_bytes(raw, policy=email.policy.compat32)
-    return str(m.get("Message-ID") or "").strip("<> \r\n")
+    return mid(m.get("Message-ID"))
 
 class Google:
     def __init__(self, src, user):
         self.src, self.user = src, user
         self.m = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=120)
         self.m.login(user, open(f"/root/.secrets/fetch/{src}.pw").read().strip())
-        self.box = {}
-        for line in self.m.list()[1]:
-            s = line.decode(); flags = s.split(")")[0]; name = s.rsplit(' "/" ', 1)[1]
-            for f in ("\\Junk", "\\All", "\\Trash"):
-                if f in flags: self.box[f] = name
+        self.box = gmail_folders(self.m)
         if "\\Junk" not in self.box: raise RuntimeError(f"{src}: no \\Junk (Spam) mailbox visible over IMAP")
 
     def spam(self):
@@ -156,9 +147,7 @@ def sync(acct, sources, c):
         say(f"[{acct}] new spam from {src} uid {uid} -> {FOLDER}: {key[:40]}")
         if DRY: continue
         raw, when = g[src].body(uid)
-        up = json.load(urllib.request.urlopen(urllib.request.Request(f"{API}/jmap/upload/{acct}/", data=raw,
-                       headers={"Authorization": "Bearer " + KEY, "Content-Type": "message/rfc822"}), timeout=120))
-        e = {"blobId": up["blobId"], "mailboxIds": {folder: True}, "keywords": {}}
+        e = {"blobId": upload(acct, raw), "mailboxIds": {folder: True}, "keywords": {}}
         if when: e["receivedAt"] = when
         r = jmap([["Email/import", {"accountId": acct, "emails": {"x": e}}, "i"]])[0][1]
         if "x" not in (r.get("created") or {}): raise RuntimeError(f"import failed: {r.get('notCreated')}")

@@ -12,39 +12,23 @@
 #        nv-google-trim --max N              (stop after N moves per source in this run; default 50000)
 import sys, os, time, json, re, imaplib, email, email.policy, datetime, sqlite3, urllib.request
 
-SITE = json.load(open(os.environ.get("NV_SITE", "/etc/nv/site.json")))   # installed by recipe/09-ops.sh
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
+SITE = site()   # installed by recipe/09-ops.sh
 SOURCES = {s["name"]: (s["user"], s["account"], int(s["keep_days"])) for s in SITE["google"]["sources"] if s.get("keep_days")}
 STATE = "/var/lib/nv-fetch/state.db"
-KEY = open("/root/.secrets/laptop-api.key").read().strip(); API = "http://127.0.0.1:8080"
 DRY = "--dry" in sys.argv
 MAX = int(sys.argv[sys.argv.index("--max") + 1]) if "--max" in sys.argv else 50000
 ARGS = [a for a in sys.argv[1:] if a in SOURCES]
 now = lambda: datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
-def jmap(calls):
-    body = {"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"], "methodCalls": calls}
-    r = urllib.request.Request(API + "/jmap/", data=json.dumps(body).encode(),
-                               headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(r, timeout=120))["methodResponses"]
-
 def nv_mids(acct):
     """Every Message-ID the server KEEPS: in some folder other than Trash or Junk (those get emptied, so a copy
     that only sits there doesn't count, and the Google copy is left alone)."""
-    mbs = jmap([["Mailbox/get", {"accountId": acct, "properties": ["role", "name", "parentId"]}, "m"]])[0][1]["list"]
     # also "Google Spam" (nv-spam-mirror's folder): its copies are removed when Google expires them
-    skip = [m["id"] for m in mbs if m.get("role") in ("trash", "junk") or (m.get("name") == "Google Spam" and not m.get("parentId"))]
-    ids, pos = [], 0
-    while True:
-        r = jmap([["Email/query", {"accountId": acct, "position": pos, "limit": 10000,
-                                   "filter": {"inMailboxOtherThan": skip} if skip else None}, "q"]])[0][1]
-        if not r["ids"]: break
-        ids += r["ids"]; pos += len(r["ids"])
-    out = set()
-    for i in range(0, len(ids), 500):
-        for e in jmap([["Email/get", {"accountId": acct, "ids": ids[i:i+500], "properties": ["messageId"]}, "g"]])[0][1]["list"]:
-            out.update(m.strip("<> ") for m in (e.get("messageId") or []))
-    if len(ids) < 1000 or len(out) < 0.5 * len(ids):
-        raise RuntimeError(f"nv index for {acct} looks wrong ({len(ids)} emails, {len(out)} ids): refusing to trim")
+    out, n = message_ids(acct, skip_roles=("trash", "junk"), skip_names=("Google Spam",))
+    if n < 1000 or len(out) < 0.5 * n:
+        raise RuntimeError(f"server index for {acct} looks wrong ({n} emails, {len(out)} ids): refusing to trim")
     return out
 
 def trim(src, user, acct, KEEP_DAYS, c):
@@ -52,11 +36,7 @@ def trim(src, user, acct, KEEP_DAYS, c):
     skip = {k for (k,) in c.execute("select key from google_trim_skip where src = ?", (src,))}
     m = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=120)
     m.login(user, open(f"/root/.secrets/fetch/{src}.pw").read().strip())
-    box = {}
-    for line in m.list()[1]:
-        s = line.decode(); flags = s.split(")")[0]; name = s.rsplit(' "/" ', 1)[1]
-        for f in ("\\All", "\\Trash"):
-            if f in flags: box[f] = name
+    box = gmail_folders(m, ("\\All", "\\Trash"))
     m.select(box["\\All"], readonly=DRY)
     cutoff = (datetime.date.today() - datetime.timedelta(days=KEEP_DAYS)).strftime("%Y/%m/%d")
     typ, d = m.uid("SEARCH", "X-GM-RAW", f'"before:{cutoff} -in:trash -in:spam -in:drafts -in:chats"')

@@ -3,12 +3,10 @@
 # Asks for a new password (not echoed, twice), stores it on the Stalwart account, then verifies it with a real
 # IMAP login on localhost. Run it interactively over ssh -t; the password never appears in logs or arguments.
 # --random: set a random password instead of prompting (used to test this script on unused accounts).
-import sys, json, getpass, imaplib, ssl, secrets, subprocess, urllib.request
-K = open("/root/.secrets/laptop-api.key").read().strip(); API = "http://127.0.0.1:8080/jmap/"
-def j(calls):
-    r = urllib.request.Request(API, data=json.dumps({"using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"], "methodCalls": calls}).encode(),
-                               headers={"Authorization": "Bearer " + K, "Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(r, timeout=30))["methodResponses"]
+import os, sys, getpass, imaplib, ssl, secrets, subprocess
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
+def j(calls): return jmap(calls, using=ADMIN, timeout=30)
 
 login = sys.argv[1]
 login = login.split("@")[0]

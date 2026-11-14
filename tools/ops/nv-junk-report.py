@@ -10,20 +10,14 @@
 #        nv-junk-report --dry    print counts only; nothing mailed or deleted
 import json, os, sys, subprocess, datetime, collections, urllib.request
 
-KEY = open("/root/.secrets/laptop-api.key").read().strip()
-API = "http://127.0.0.1:8080/jmap/"
-SITE = json.load(open(os.environ.get("NV_SITE", "/etc/nv/site.json")))   # installed by recipe/09-ops.sh
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
+SITE = site()   # installed by recipe/09-ops.sh
 CONF = SITE.get("junk_report", {})
 KEEP_DAYS = int(CONF.get("keep_days", 30))   # retention for DETAIL accounts' Junk
 MIN_SPIKE = 10
 DRY = "--dry" in sys.argv
 SHOW = "--show" in sys.argv
-
-def jmap(calls):
-    body = {"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"], "methodCalls": calls}
-    req = urllib.request.Request(API, data=json.dumps(body).encode(),
-                                 headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(req, timeout=120))["methodResponses"]
 
 def iso(d): return d.strftime("%Y-%m-%dT%H:%M:%SZ")
 now = datetime.datetime.now(datetime.timezone.utc)
@@ -31,10 +25,7 @@ since8 = now - datetime.timedelta(days=8)
 day = datetime.timedelta(days=1)
 
 def accounts():
-    body = {"using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"], "methodCalls": [["x:Account/get", {"properties": ["name"]}, "a"]]}
-    req = urllib.request.Request(API, data=json.dumps(body).encode(),
-                                 headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
-    return {a["id"]: a["name"] for a in json.load(urllib.request.urlopen(req, timeout=60))["methodResponses"][0][1]["list"]
+    return {a["id"]: a["name"] for a in jmap([["x:Account/get", {"properties": ["name"]}, "a"]], using=ADMIN)[0][1]["list"]
             if a["name"] != "admin"}
 ACCOUNTS = accounts()
 DETAIL = {i for i, n in ACCOUNTS.items() if n in CONF.get("detail_accounts", [])}   # Junk listed message by message

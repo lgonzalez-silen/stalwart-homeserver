@@ -21,6 +21,7 @@ for ((i = 0; i < NV_GOOGLE_SOURCES_COUNT; i++)); do k=NV_GOOGLE_SOURCES_${i}_KEE
 
 echo "== tools"
 install -d -m 700 /var/lib/nv-fetch /root/.secrets/fetch
+live && { [ -f /usr/local/lib/nv/nvlib.py ] || { echo "run recipe/09-ops.sh first (installs nvlib)"; exit 1; }; }
 repo_file tools/google/nv-fetch.py | put /usr/local/sbin/nv-fetch 700
 repo_file tools/google/nv-fetch-secret.py | put /usr/local/sbin/nv-fetch-secret 700
 repo_file tools/google/nv-spam-mirror.py | put /usr/local/sbin/nv-spam-mirror 700
