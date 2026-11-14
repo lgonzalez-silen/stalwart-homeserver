@@ -1,0 +1,9 @@
+#!/bin/bash
+# dns/preview — what DNSControl would change at your DNS provider. Reads only.
+# Token: $CLOUDFLARE_API_TOKEN, else the dns_cloudflare_api_token line of the file named by $CF_INI.
+set -euo pipefail
+cd "$(dirname "$0")"
+[ -f dnsconfig.js ] && [ -f creds.json ] || { echo "copy dnsconfig.example.js and creds.example.json first"; exit 1; }
+[ -n "${CLOUDFLARE_API_TOKEN:-}" ] || CLOUDFLARE_API_TOKEN=$(sed -nE 's/^dns_cloudflare_api_token *= *//p' "${CF_INI:?set CLOUDFLARE_API_TOKEN or CF_INI}")
+export CLOUDFLARE_API_TOKEN
+exec dnscontrol preview "$@"

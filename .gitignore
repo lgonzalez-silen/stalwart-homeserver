@@ -1,3 +1,6 @@
 .DS_Store
 site.json
 __pycache__/
+dns/dnsconfig.js
+dns/creds.json
+dns/backups/

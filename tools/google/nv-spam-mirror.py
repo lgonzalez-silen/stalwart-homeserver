@@ -4,11 +4,11 @@
 #
 #   new spam at Google                 -> copied into "Google Spam" (unread), once per Message-ID across accounts
 #   Google drops it (30-day expiry)    -> removed from "Google Spam"
-#   Luis moves it out of "Google Spam" -> rescue: moved out of Spam at Google too (= "Not spam"); stays where he put it
+#   you move it out of "Google Spam" -> rescue: moved out of Spam at Google too (= "Not spam"); stays where you put it
 #     ...into Trash / Junk Mail, or deletes it -> confirmed spam: nothing at Google, never mirrored again
-#   rescued directly in Gmail          -> nv's copy moved to Inbox (the pull would otherwise skip it as already present)
+#   rescued directly in Gmail          -> the server's copy moved to Inbox (the pull would otherwise skip it as already present)
 #
-# The only change ever made at Google: UID MOVE from Spam to INBOX, for messages Luis rescued on nv.
+# The only change ever made at Google: UID MOVE from Spam to INBOX, for messages you rescued on the server.
 # usage: nv-spam-mirror [--dry]     (--dry: report what would happen, change nothing anywhere)
 import sys, os, json, re, sqlite3, imaplib, datetime, email, email.policy, urllib.request
 
@@ -70,7 +70,7 @@ class Google:
         return raw, when
 
     def not_spam(self, uid):
-        """Luis rescued it on nv: move it out of Spam into INBOX (Gmail's 'Not spam')."""
+        """Rescued on the server: move it out of Spam into INBOX (Gmail's 'Not spam')."""
         self.m.select(self.box["\\Junk"], readonly=False)
         typ, d = self.m.uid("MOVE", str(uid), "INBOX")
         if typ != "OK": raise RuntimeError(f"{self.src}: MOVE uid {uid} failed: {d}")
@@ -101,7 +101,7 @@ def sync(acct, sources, c):
     rows = {r[0]: (r[1], r[2]) for r in c.execute("select key, nv_id, status from spam_mirror where acct=?", (acct,))}
     mirrored = {k: v[0] for k, v in rows.items() if v[1] == "mirrored"}
 
-    # 1. what happened on nv to what we mirrored?
+    # 1. what happened on the server to what we mirrored?
     if mirrored:
         found = {}
         ids = list(mirrored.values())
@@ -113,7 +113,7 @@ def sync(acct, sources, c):
             if folder in (boxes or ()):
                 if key not in at_google:              # Google dropped it: expired, or rescued directly in Gmail?
                     if any(conn.kept_outside_spam(key) for conn in g.values()):
-                        say(f"[{acct}] rescued in Gmail -> moving nv copy to Inbox: {key[:40]}")
+                        say(f"[{acct}] rescued in Gmail -> moving server copy to Inbox: {key[:40]}")
                         if not DRY:
                             jmap([["Email/set", {"accountId": acct, "update": {nv_id: {"mailboxIds": {role["inbox"]: True}}}}, "u"]])
                             c.execute("update spam_mirror set status='rescued-at-google', at=? where acct=? and key=?", (now(), acct, key))
@@ -124,24 +124,24 @@ def sync(acct, sources, c):
                             c.execute("update spam_mirror set status='expired', at=? where acct=? and key=?", (now(), acct, key))
                 continue
             if not boxes or boxes & {role.get("trash"), role.get("junk")}:
-                status = "deleted"                     # Luis confirmed it's spam
+                status = "deleted"                     # confirmed spam
             else:
                 status = "rescued"
                 for src, uid in at_google.get(key, {}).items():
-                    say(f"[{acct}] rescued on nv -> Not spam at {src} (uid {uid}): {key[:40]}")
+                    say(f"[{acct}] rescued on server -> Not spam at {src} (uid {uid}): {key[:40]}")
                     if not DRY: g[src].not_spam(uid)
             say(f"[{acct}] {status}: {key[:40]}")
             if not DRY: c.execute("update spam_mirror set status=?, at=? where acct=? and key=?", (status, now(), acct, key))
 
     # 2. new spam at Google -> mirror it (once per key, ever)
     new = [k for k in at_google if k not in rows]
-    # already on nv (forwarded, or pulled by nv-fetch, then marked spam in Gmail): leave that copy where Luis
+    # already on the server (forwarded, or pulled by nv-fetch, then marked spam in Gmail): leave that copy where the user
     # filed it and don't add a second one. nv-fetch records every Message-ID it saw in its done table.
     on_nv = {r[0].strip("<> ") for r in c.execute(
         "select key from done where src in (%s) and result in ('imported','skip-present')" % ",".join("?" * len(sources)),
         list(sources))}
     for key in [k for k in new if k.strip("<> ") in on_nv]:
-        say(f"[{acct}] spam at Google but already on nv (not mirrored): {key[:40]}")
+        say(f"[{acct}] spam at Google but already on the server (not mirrored): {key[:40]}")
         if not DRY: c.execute("insert into spam_mirror values (?,?,?,?,?)", (acct, key, None, "already-on-nv", now()))
     new = [k for k in new if k.strip("<> ") not in on_nv]
     for key in new:

@@ -7,8 +7,8 @@
 # Safety rules (never undo the owner's filing):
 #   - starts from "now": the first run records UIDNEXT and fetches nothing older
 #   - skips any message whose Message-ID is already ANYWHERE in the target account
-#   - remembers every key it delivered, so mail moved/deleted on nv is never redelivered
-#   - only adds; never changes or deletes anything on nv, and is read-only at Google (BODY.PEEK, EXAMINE)
+#   - remembers every key it delivered, so mail moved/deleted on the server is never redelivered
+#   - only adds; never changes or deletes anything on the server, and is read-only at Google (BODY.PEEK, EXAMINE)
 #
 # usage: nv-fetch                 run all enabled sources forever (systemd service)
 #        nv-fetch --once [src]    one pass and exit (testing)
@@ -175,7 +175,7 @@ class Source:
         today = datetime.date.today()
         if self.fails >= 10 and self.alerted != today:       # ~10 minutes of failures; at most one alert per day
             self.alerted = today
-            body = (f"Pulling mail from {self.cfg['user']} into nv has failed {self.fails} times in a row.\n\nLast error: {e}\n\n"
+            body = (f"Pulling mail from {self.cfg['user']} into the mail server has failed {self.fails} times in a row.\n\nLast error: {e}\n\n"
                     "If it says the login/credentials are invalid, the app password was revoked (e.g. after a Google password\n"
                     "change). Create a new one and run:  ssh -t root@" + HOST + " nv-fetch-secret " + self.name + "\n"
                     "Mail isn't lost meanwhile: it waits at Google and is fetched once this works again.\n")

@@ -63,7 +63,7 @@ for acct, name in ACCOUNTS.items():
     if flag: spikes.append(name)
     lines.append(f"{name:8} {len(last):4} in 24h   (7-day avg {avg:5.1f}){'   <-- SPIKE' if flag else ''}" + (f"\n         {top}" if top else ""))
     if acct in DETAIL:
-        detail.append(f"\n{name} Junk, last 24h (not forwarded; kept {KEEP_DAYS} days on nv):")
+        detail.append(f"\n{name} Junk, last 24h (not forwarded; kept {KEEP_DAYS} days on the server):")
         for m in last:
             f = (m.get("from") or [{}])[0]
             score = (m.get("header:X-Spam-Score:asText") or "").strip().split("score=")[-1].split(",")[0]

@@ -1,0 +1,15 @@
+#!/bin/bash
+# dns/push — preview, ask for a typed "yes", back up the zones, then apply.
+# Records missing from dnsconfig.js are DELETED at the provider: always read the preview.
+set -euo pipefail
+cd "$(dirname "$0")"
+[ -n "${CLOUDFLARE_API_TOKEN:-}" ] || CLOUDFLARE_API_TOKEN=$(sed -nE 's/^dns_cloudflare_api_token *= *//p' "${CF_INI:?set CLOUDFLARE_API_TOKEN or CF_INI}")
+export CLOUDFLARE_API_TOKEN
+dnscontrol preview "$@"
+read -rp 'Apply these changes? Type yes: ' a
+[ "$a" = yes ] || { echo "nothing applied"; exit 1; }
+mkdir -p backups
+BK="backups/all-$(date -u +%Y%m%d-%H%M%S).js"; [ -e "$BK" ] && { echo "$BK exists; wait a second and retry"; exit 1; }
+dnscontrol get-zones --format=js --out="$BK" cloudflare - all
+[ -s "$BK" ] || { echo "backup failed, nothing applied"; exit 1; }
+dnscontrol push "$@"

@@ -28,7 +28,7 @@ def jmap(calls):
     return json.load(urllib.request.urlopen(r, timeout=120))["methodResponses"]
 
 def nv_mids(acct):
-    """Every Message-ID in the nv account, all folders."""
+    """Every Message-ID in the server account, all folders."""
     ids, pos = [], 0
     while True:
         r = jmap([["Email/query", {"accountId": acct, "position": pos, "limit": 10000}, "q"]])[0][1]
@@ -68,8 +68,8 @@ def trim(src, user, acct, KEEP_DAYS, c):
             elif mid in on_nv: go.append((uid, mid)); size_go += size
             else: keep += 1
     go = go[:MAX]
-    print(f"[{src}] older than {cutoff}: {len(uids)} | on nv -> Trash: {len(go)} ({size_go/1e9:.2f} GB) | "
-          f"not on nv, kept: {keep} | no Message-ID, kept: {nomid}" + (" | DRY, nothing moved" if DRY else ""), flush=True)
+    print(f"[{src}] older than {cutoff}: {len(uids)} | on server -> Trash: {len(go)} ({size_go/1e9:.2f} GB) | "
+          f"not on server, kept: {keep} | no Message-ID, kept: {nomid}" + (" | DRY, nothing moved" if DRY else ""), flush=True)
     if DRY: m.logout(); return
     # Google sometimes answers a MOVE with "System Error" and drops the connection, often AFTER doing the move. So: move
     # 50 at a time; if a batch errors, reconnect and check which of its messages are really still in All Mail; retry
