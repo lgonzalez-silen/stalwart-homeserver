@@ -1,0 +1,7 @@
+[Unit]
+Description=Daily Junk spike check
+[Timer]
+OnCalendar=*-*-* 13:00 UTC
+Persistent=true
+[Install]
+WantedBy=timers.target

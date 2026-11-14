@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""nv: run or render a recipe with your site's settings.
+
+  ./nv run    <recipe>         run it on the server (ssh root@<server.hostname> bash -s)
+  ./nv render <recipe> <dir>   run it here with nothing executed: files it would install go to <dir>/files,
+                               commands it would run to <dir>/commands.log (see lib/recipe.sh)
+  ./nv diff   <dir>            compare a render with the live server (read-only): contents, mode, owner
+  ./nv sh     <script> [args]  run a script HERE (your computer) with the NV_* settings, e.g. tools/publish-sites.sh
+  ./nv env                     print the NV_* settings recipes see
+
+Settings come from site.json: --site <file>, else $NV_SITE, else ./site.json. Each value becomes NV_<PATH>, e.g.
+server.hostname -> NV_SERVER_HOSTNAME. A list of plain values becomes a space-separated string. A list of objects
+becomes JSON in NV_<PATH>, plus NV_<PATH>_COUNT and NV_<PATH>_<n>_<KEY> per item (websites[0].name ->
+NV_WEBSITES_0_NAME). Python tools on the server read /etc/nv/site.json directly.
+"""
+import json, os, re, shlex, shutil, subprocess, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def flatten(prefix, v, out):
+    if isinstance(v, dict):
+        for k, x in v.items():
+            flatten(f"{prefix}_{re.sub(r'[^A-Za-z0-9]', '_', k).upper()}", x, out)
+    elif isinstance(v, list) and all(isinstance(x, (str, int, float)) for x in v):
+        out[prefix] = " ".join(str(x) for x in v)
+    elif isinstance(v, list):   # list of objects: JSON, plus NV_X_COUNT and NV_X_<n>_<KEY> for plain bash
+        out[prefix] = json.dumps(v, separators=(",", ":"))
+        out[prefix + "_COUNT"] = str(len(v))
+        for n, x in enumerate(v):
+            flatten(f"{prefix}_{n}", x, out)
+    elif isinstance(v, bool):
+        out[prefix] = "yes" if v else "no"
+    elif v is None:
+        out[prefix] = ""
+    else:
+        out[prefix] = str(v)
+
+
+def settings(site):
+    out = {}
+    flatten("NV", json.load(open(site)), out)
+    out["NV_SITE_JSON"] = open(site).read()   # recipe/09 installs it as /etc/nv/site.json for the tools
+    # per-run switches like NV_SHOW=1 ./nv run ... are passed through (site.json values win on a clash)
+    for k, v in os.environ.items():
+        if k.startswith("NV_") and k not in ("NV_SITE", "NV_RENDER") and k not in out:
+            out[k] = v
+    return out
+
+
+def repo_files(text):
+    """Recipes ship files from this repo with `repo_file <path>` (prints the file). Each one named in the recipe is
+    embedded as a quoted heredoc, so it works the same in render mode (no external commands needed)."""
+    paths = sorted(set(re.findall(r"\brepo_file\s+([\w./-]+)", text)))
+    out = ["repo_file() {", "  local _l", "  case $1 in"]
+    for i, p in enumerate(paths):
+        data = open(os.path.join(HERE, p)).read()
+        if not data.endswith("\n"):
+            sys.exit(f"{p}: must end with a newline")
+        tag = f"NV_FILE_{i}_END"
+        if tag in data:
+            sys.exit(f"{p}: contains {tag}")
+        out += [f"    {p}) while IFS= read -r _l; do printf '%s\\n' \"$_l\"; done <<'{tag}'", data + tag, "      ;;"]
+    out += ["    *) echo \"repo_file: $1 not embedded\" >&2; return 1 ;;", "  esac", "}"]
+    return "\n".join(out) + "\n"
+
+
+def script(env, recipe):
+    text = open(recipe).read()
+    lines = [f"export {k}={shlex.quote(v)}" for k, v in sorted(env.items())]
+    return ("\n".join(lines) + "\n" + open(os.path.join(HERE, "lib", "recipe.sh")).read() + "\n"
+            + repo_files(text) + text)
+
+
+def bash5():
+    for b in ("/opt/homebrew/bin/bash", "/usr/local/bin/bash", "/usr/bin/bash", "/bin/bash"):
+        if os.path.exists(b):
+            v = subprocess.run([b, "-c", "echo ${BASH_VERSINFO[0]}"], capture_output=True, text=True).stdout.strip()
+            if v.isdigit() and int(v) >= 4:
+                return b
+    sys.exit("render needs bash 4 or newer (macOS: brew install bash)")
+
+
+SECRET = re.compile(rb"<secret:[A-Za-z0-9_.-]+>")
+
+
+def hide_secrets(theirs, mine):
+    """A render line holding a placeholder like <secret:des_key> stands for a secret that only the server has.
+    Where a server line matches that line with the secret filled in, swap in the render line, so the secret is
+    never printed and the line counts as equal. Any other line holding a secret-looking value stays as it is."""
+    out = theirs
+    for line in mine.splitlines():
+        if SECRET.search(line):
+            parts = [re.escape(x) for x in SECRET.split(line)]
+            pat = re.compile(rb"^" + rb"[^\n]+".join(parts) + rb"$", re.M)
+            out = pat.sub(lambda m: line, out)
+            if not pat.search(out) and line not in out:
+                print("note: a line with a secret placeholder had no match on the server (not shown)")
+    return out
+
+
+def diff(env, out):
+    """Compare <out>/files + <out>/modes with the same paths on the server. Reads only."""
+    import tarfile, tempfile, difflib, io
+    host = env["NV_SERVER_HOSTNAME"]
+    want = {}
+    for line in open(os.path.join(out, "modes")):
+        m, o, p = line.rstrip("\n").split(" ", 2)
+        want[p] = (m, o)
+    paths = sorted(want)
+    q = " ".join(shlex.quote(p) for p in paths)
+    st = subprocess.run(["ssh", f"root@{host}", f"stat -c '%a %U:%G %n' {q} 2>/dev/null; true"],
+                        capture_output=True, text=True).stdout.splitlines()
+    live = {l.split(" ", 2)[2]: tuple(l.split(" ", 2)[:2]) for l in st if l.count(" ") >= 2}
+    raw = subprocess.run(["ssh", f"root@{host}", f"tar -cf - --ignore-failed-read {q} 2>/dev/null; true"],
+                         capture_output=True).stdout
+    files = {}
+    with tarfile.open(fileobj=io.BytesIO(raw)) as t:
+        for mbr in t.getmembers():
+            if mbr.isfile():
+                files["/" + mbr.name] = t.extractfile(mbr).read()
+    same = 0
+    for p in paths:
+        mine = open(os.path.join(out, "files") + p, "rb").read()
+        if p not in live:
+            print(f"MISSING on server: {p}"); continue
+        if live[p] != want[p]:
+            print(f"MODE/OWNER {p}: render {' '.join(want[p])}, server {' '.join(live[p])}")
+        theirs = hide_secrets(files.get(p, b""), mine)
+        if theirs == mine:
+            same += live[p] == want[p]
+            continue
+        print(f"CONTENT {p}:")
+        sys.stdout.writelines(difflib.unified_diff(theirs.decode(errors="replace").splitlines(True),
+                                                   mine.decode(errors="replace").splitlines(True), "server", "render"))
+    print(f"{same} of {len(paths)} files identical (content, mode, owner)")
+
+
+def main(argv):
+    site = os.environ.get("NV_SITE", "site.json")
+    if "--site" in argv:
+        i = argv.index("--site"); site = argv[i + 1]; del argv[i:i + 2]
+    if not argv or argv[0] not in ("run", "render", "diff", "sh", "env"):
+        sys.exit(__doc__)
+    env = settings(site)
+    if argv[0] == "sh":
+        sys.exit(subprocess.run([bash5(), argv[1], *argv[2:]], env={**os.environ, **env}).returncode)
+    if argv[0] == "diff":
+        return diff(env, os.path.abspath(argv[1]))
+    if argv[0] == "env":
+        for k, v in sorted(env.items()):
+            print(f"{k}={shlex.quote(v)}")
+        return
+    recipe = argv[1]
+    if argv[0] == "run":
+        host = env["NV_SERVER_HOSTNAME"]
+        sys.exit(subprocess.run(["ssh", f"root@{host}", "bash -s"], input=script(env, recipe), text=True).returncode)
+    out = os.path.abspath(argv[2])
+    if os.path.exists(out) and os.listdir(out):
+        sys.exit(f"{out} is not empty")
+    os.makedirs(out, exist_ok=True)
+    env2 = {"PATH": "", "HOME": out, "NV_RENDER": out, "LANG": "C"}
+    r = subprocess.run([bash5(), "-c", script(env, recipe)], env=env2, cwd=out)
+    print(f"rendered {recipe} -> {out} (exit {r.returncode})")
+    sys.exit(r.returncode)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

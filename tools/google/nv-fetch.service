@@ -1,0 +1,13 @@
+[Unit]
+Description=Pull new mail from Google accounts into Stalwart (nv-fetch)
+After=network-online.target stalwart.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/sbin/nv-fetch
+Restart=always
+RestartSec=60
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,90 @@
+#!/usr/bin/python3 -I
+# nv-junk-report: Junk watch. Runs daily from a timer and mails (nv-alert) ONLY when an account spikes.
+#   - every account: messages that arrived in Junk in the last 24h, top sender domains, 7-day baseline
+#   - SPIKE in the subject when an account's 24h count > max(MIN_SPIKE, 3 x its daily average over the prior 7 days)
+#   - junk_report.detail_accounts in site.json (e.g. a forward-only account nobody reads on the server): each Junk
+#     message listed with time, sender, subject, score, and their Junk older than KEEP_DAYS is deleted
+# Accounts are read live from Stalwart (all except "admin").
+# usage: nv-junk-report          timer mode: mail only if there's a spike (also prunes the detail accounts' Junk)
+#        nv-junk-report --show   print the full report (incl. the detail accounts' sender/subject list) for review
+#        nv-junk-report --dry    print counts only; nothing mailed or deleted
+import json, os, sys, subprocess, datetime, collections, urllib.request
+
+KEY = open("/root/.secrets/laptop-api.key").read().strip()
+API = "http://127.0.0.1:8080/jmap/"
+SITE = json.load(open(os.environ.get("NV_SITE", "/etc/nv/site.json")))   # installed by recipe/09-ops.sh
+CONF = SITE.get("junk_report", {})
+KEEP_DAYS = int(CONF.get("keep_days", 30))   # retention for DETAIL accounts' Junk
+MIN_SPIKE = 10
+DRY = "--dry" in sys.argv
+SHOW = "--show" in sys.argv
+
+def jmap(calls):
+    body = {"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"], "methodCalls": calls}
+    req = urllib.request.Request(API, data=json.dumps(body).encode(),
+                                 headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
+    return json.load(urllib.request.urlopen(req, timeout=120))["methodResponses"]
+
+def iso(d): return d.strftime("%Y-%m-%dT%H:%M:%SZ")
+now = datetime.datetime.now(datetime.timezone.utc)
+since8 = now - datetime.timedelta(days=8)
+day = datetime.timedelta(days=1)
+
+def accounts():
+    body = {"using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"], "methodCalls": [["x:Account/get", {"properties": ["name"]}, "a"]]}
+    req = urllib.request.Request(API, data=json.dumps(body).encode(),
+                                 headers={"Authorization": "Bearer " + KEY, "Content-Type": "application/json"})
+    return {a["id"]: a["name"] for a in json.load(urllib.request.urlopen(req, timeout=60))["methodResponses"][0][1]["list"]
+            if a["name"] != "admin"}
+ACCOUNTS = accounts()
+DETAIL = {i for i, n in ACCOUNTS.items() if n in CONF.get("detail_accounts", [])}   # Junk listed message by message
+
+lines, spikes, detail = [], [], []
+for acct, name in ACCOUNTS.items():
+    try:
+        mb = jmap([["Mailbox/get", {"accountId": acct, "properties": ["role", "name"]}, "m"]])[0][1]["list"]
+        junk = [m["id"] for m in mb if m.get("role") == "junk"] or [m["id"] for m in mb if m["name"].lower() in ("junk", "junk mail")]
+        if not junk:
+            lines.append(f"{name:8} (no Junk folder)"); continue
+        r = jmap([["Email/query", {"accountId": acct, "filter": {"inMailbox": junk[0], "after": iso(since8)},
+                                   "sort": [{"property": "receivedAt", "isAscending": False}], "limit": 5000}, "q"],
+                  ["Email/get", {"accountId": acct, "#ids": {"resultOf": "q", "name": "Email/query", "path": "/ids"},
+                                 "properties": ["receivedAt", "from", "subject", "header:X-Spam-Score:asText"]}, "g"]])
+        msgs = r[1][1]["list"]
+    except Exception as e:
+        lines.append(f"{name:8} ERROR {e}"); spikes.append(f"{name} (report error)"); continue
+    t = lambda m: datetime.datetime.fromisoformat(m["receivedAt"].replace("Z", "+00:00"))
+    last = [m for m in msgs if t(m) > now - day]
+    prior = [m for m in msgs if now - 8 * day < t(m) <= now - day]
+    avg = len(prior) / 7
+    dom = collections.Counter(((m.get("from") or [{}])[0].get("email") or "?").rsplit("@", 1)[-1].lower() for m in last)
+    top = ", ".join(f"{d} {n}" for d, n in dom.most_common(5))
+    flag = len(last) > max(MIN_SPIKE, 3 * avg)
+    if flag: spikes.append(name)
+    lines.append(f"{name:8} {len(last):4} in 24h   (7-day avg {avg:5.1f}){'   <-- SPIKE' if flag else ''}" + (f"\n         {top}" if top else ""))
+    if acct in DETAIL:
+        detail.append(f"\n{name} Junk, last 24h (not forwarded; kept {KEEP_DAYS} days on nv):")
+        for m in last:
+            f = (m.get("from") or [{}])[0]
+            score = (m.get("header:X-Spam-Score:asText") or "").strip().split("score=")[-1].split(",")[0]
+            detail.append(f"  {t(m):%m-%d %H:%M}Z  {score:>6}  {f.get('email','?')[:45]:45}  {(m.get('subject') or '')[:70]}")
+        if not last: detail.append("  (none)")
+        old = jmap([["Email/query", {"accountId": acct, "filter": {"inMailbox": junk[0],
+                     "before": iso(now - datetime.timedelta(days=KEEP_DAYS))}, "limit": 5000}, "o"]])[0][1]["ids"]
+        if old and not (DRY or SHOW):
+            jmap([["Email/set", {"accountId": acct, "destroy": old}, "d"]])
+            detail.append(f"  ({len(old)} older than {KEEP_DAYS} days deleted)")
+
+if DRY:
+    for l in lines: print(l.split("\n")[0])
+    print("spikes:", spikes or "none"); sys.exit(0)
+
+body = ("Messages filed in Junk per account. Spike = more than max(%d, 3x the 7-day daily average).\n"
+        "Move anything legitimate out of Junk: the filter learns from it.\n\n" % MIN_SPIKE
+        + "\n".join(lines) + "\n" + "\n".join(detail) + "\n")
+if SHOW:
+    print(body); sys.exit(0)
+if not spikes:
+    sys.exit(0)
+subject = "Junk SPIKE: " + ", ".join(spikes)
+subprocess.run(["/usr/local/sbin/nv-alert", subject], input=body.encode(), check=True)

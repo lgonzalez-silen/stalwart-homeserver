@@ -1,0 +1,7 @@
+[Unit]
+Description=Junk watch: mail only when an account spikes; prune the detail accounts' Junk
+After=stalwart.service
+OnFailure=nv-alert@%n.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nv-junk-report

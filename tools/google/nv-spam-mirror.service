@@ -1,0 +1,6 @@
+[Unit]
+Description=Mirror Google Spam into the "Google Spam" folder; rescues -> Not spam at Google
+After=network-online.target stalwart.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nv-spam-mirror

@@ -1,0 +1,7 @@
+[Unit]
+Description=Google trim: move mail older than keep_days that is on this server to that Google account's Trash (nv-google-trim)
+After=network-online.target stalwart.service
+OnFailure=nv-alert@%n.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nv-google-trim

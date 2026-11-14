@@ -1,0 +1,47 @@
+{
+  "server": {
+    "hostname": "mail.example.com",
+    "ipv4": "192.0.2.10",
+    "ipv6": "2001:db8::10",
+    "timezone": "America/Chicago",
+    "provider_hostname": ""
+  },
+  "certs": {
+    "extra_names": []
+  },
+  "mail": {
+    "helper_domains": ["example.com", "example.net"],
+    "mx_hosts": ["mail.example.com"],
+    "max_message_mb": 25
+  },
+  "admin": {
+    "allow": []
+  },
+  "webmail": {
+    "hostname": "rc.mail.example.com",
+    "product_name": "Example Mail",
+    "local_plugins": ["elastic_compact", "login_refresh"],
+    "local_skins": ["elastic_compact"],
+    "compact_skin_source": "~/src/roundcube-elastic-compact"
+  },
+  "alerts": {
+    "to": "alice@example.com",
+    "from": "alerts@example.com",
+    "account": "c"
+  },
+  "websites": [
+    {"name": "example.com", "cert": "dns", "source": "~/sites/example.com", "webmail_redirect": false}
+  ],
+  "google": {
+    "sources": [
+      {"name": "gmail-alice", "user": "alice.example@gmail.com", "account": "c",
+       "own": ["alice.example@gmail.com", "alice@example.com"]},
+      {"name": "work-alice", "user": "alice@school.example.edu", "account": "c",
+       "own": ["alice@school.example.edu", "alice@example.com"], "keep_days": 365}
+    ]
+  },
+  "junk_report": {
+    "detail_accounts": [],
+    "keep_days": 30
+  }
+}
