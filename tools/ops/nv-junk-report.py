@@ -12,7 +12,7 @@
 import json, os, sys, subprocess, datetime, collections, urllib.request
 
 sys.path.insert(0, "/usr/local/lib/nv"); sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))  # repo copy last
-from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
+from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, printable, ADMIN  # noqa: E402
 SITE = site()   # installed by recipe/09-ops.sh
 CONF = SITE.get("junk_report", {})
 KEEP_DAYS = int(CONF.get("keep_days", 30))   # retention for DETAIL accounts' Junk
@@ -60,7 +60,7 @@ for acct, name in ACCOUNTS.items():
         for m in last:
             f = (m.get("from") or [{}])[0]
             score = (m.get("header:X-Spam-Score:asText") or "").strip().split("score=")[-1].split(",")[0]
-            detail.append(f"  {t(m):%m-%d %H:%M}Z  {score:>6}  {f.get('email','?')[:45]:45}  {(m.get('subject') or '')[:70]}")
+            detail.append(f"  {t(m):%m-%d %H:%M}Z  {printable(score, 6):>6}  {printable(f.get('email','?'), 45):45}  {printable(m.get('subject'), 70)}")
         if not last: detail.append("  (none)")
         old = jmap([["Email/query", {"accountId": acct, "filter": {"inMailbox": junk[0],
                      "before": iso(now - datetime.timedelta(days=KEEP_DAYS))}, "limit": 5000}, "o"]])[0][1]["ids"]

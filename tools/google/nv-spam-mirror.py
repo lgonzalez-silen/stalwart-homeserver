@@ -13,7 +13,7 @@
 import sys, os, subprocess, json, re, sqlite3, imaplib, datetime, email, email.policy, urllib.request
 
 sys.path.insert(0, "/usr/local/lib/nv"); sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))  # repo copy last
-from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
+from nvlib import jmap, upload, mid, imap_safe, message_ids, gmail_folders, site, ADMIN  # noqa: E402
 SITE = site()   # installed by recipe/09-ops.sh
 GROUPS = {}   # target Stalwart account -> Google sources feeding its "Google Spam" folder (google.sources[] in site.json)
 for s in SITE["google"]["sources"]:
@@ -47,14 +47,15 @@ class Google:
         typ, d = self.m.uid("SEARCH", "ALL")
         if typ != "OK": raise RuntimeError(f"{self.src}: Spam search failed ({typ}: {d})")
         uids = d[0].split() if d and d[0] else []
-        out = {}
+        out = {}; self.gm = {}
         for i in range(0, len(uids), 200):
             typ, d = self.m.uid("FETCH", b",".join(uids[i:i+200]).decode(), "(X-GM-MSGID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
             if typ != "OK": raise RuntimeError(f"{self.src}: Spam fetch failed ({typ})")
             for p in d:
                 if not isinstance(p, tuple): continue
                 uid = int(re.search(rb"UID (\d+)", p[0]).group(1)); gm = re.search(rb"X-GM-MSGID (\d+)", p[0]).group(1).decode()
-                out[mid_of(p[1]) or f"gm:{gm}"] = uid
+                k = mid_of(p[1]) or f"gm:{gm}"
+                out[k] = uid; self.gm[k] = gm
         return out
 
     def body(self, uid):
@@ -71,12 +72,20 @@ class Google:
         typ, d = self.m.uid("MOVE", str(uid), "INBOX")
         if typ != "OK": raise RuntimeError(f"{self.src}: MOVE uid {uid} failed: {d}")
 
-    def kept_outside_spam(self, key):
-        """Still at Google outside Spam/Trash? (i.e. rescued directly in Gmail)"""
+    def kept_outside_spam(self, key, gm=None):
+        """Still at Google outside Spam/Trash? (i.e. rescued directly in Gmail). True/False, or None = can't tell
+        safely. The key is a stranger's Message-ID: it goes into a search only if it's plain printable text;
+        otherwise only Gmail's numeric id is used."""
+        if key.startswith("gm:"): gm = key[3:]
+        if not imap_safe(key) and not key.startswith("gm:") and not gm:
+            return None
         typ, _ = self.m.select(self.box["\\All"], readonly=True)        # All Mail excludes Spam and Trash
         if typ != "OK": raise RuntimeError(f"{self.src}: cannot open All Mail ({typ})")
-        if key.startswith("gm:"): typ, d = self.m.uid("SEARCH", "X-GM-MSGID", key[3:])
-        else: typ, d = self.m.uid("SEARCH", "X-GM-RAW", f'"rfc822msgid:{key} -in:trash -in:spam"')
+        if gm and (key.startswith("gm:") or not imap_safe(key)):
+            typ, d = self.m.uid("SEARCH", "X-GM-MSGID", str(int(gm)))
+            if typ != "OK": raise RuntimeError(f"{self.src}: All Mail search failed ({typ})")
+            return bool(d and d[0])
+        typ, d = self.m.uid("SEARCH", "X-GM-RAW", f'"rfc822msgid:{key} -in:trash -in:spam"')
         if typ != "OK": raise RuntimeError(f"{self.src}: All Mail search failed ({typ})")   # never read an error as "found"
         if d and d[0]: return True
         if key.startswith("gm:"): return False
@@ -121,7 +130,12 @@ def sync(acct, sources, c):
             boxes = found.get(nv_id)
             if folder in (boxes or ()):
                 if key not in at_google:              # Google dropped it: expired, or rescued directly in Gmail?
-                    if any(conn.kept_outside_spam(key) for conn in g.values()):
+                    gm = (c.execute("select gm from spam_mirror_gm where acct=? and key=?", (acct, key)).fetchone() or (None,))[0]
+                    answers = [conn.kept_outside_spam(key, gm) for conn in g.values()]
+                    if None in answers and True not in answers:
+                        say(f"[{acct}] can't check {key[:40]!r} safely at Google (unusual Message-ID): left in {FOLDER}")
+                        continue
+                    if True in answers:
                         say(f"[{acct}] rescued in Gmail -> moving server copy to Inbox: {key[:40]}")
                         if not DRY:   # out of the mirror folder, into Inbox; any other folder the user added stays
                             jmap([["Email/set", {"accountId": acct, "update": {nv_id: {f"mailboxIds/{folder}": None,
@@ -182,6 +196,8 @@ def sync(acct, sources, c):
                 subprocess.run(["/usr/local/sbin/nv-alert", f"spam mirror skipped a message: {src}"], input=body.encode())
             continue
         c.execute("insert into spam_mirror values (?,?,?,?,?)", (acct, key, r["created"]["x"]["id"], "mirrored", now()))
+        if g[src].gm.get(key):
+            c.execute("insert or replace into spam_mirror_gm values (?,?,?)", (acct, key, g[src].gm[key]))
         c.commit()
     c.commit()
     for conn in g.values():
@@ -193,5 +209,11 @@ if __name__ == "__main__":
     c = sqlite3.connect(STATE, timeout=30)
     c.execute("create table if not exists spam_mirror (acct text, key text, nv_id text, status text, at text, primary key (acct, key))")
     c.execute("create table if not exists spam_mirror_fail (acct text, key text, tries int, at text, primary key (acct, key))")
+    c.execute("create table if not exists spam_mirror_gm (acct text, key text, gm text, primary key (acct, key))")
+    failed = []
     for acct, sources in GROUPS.items():
-        sync(acct, sources, c)
+        try:   # one account's trouble must not stop the others
+            sync(acct, sources, c)
+        except Exception as e:
+            failed.append(acct); print(f"[{acct}] sync failed: {type(e).__name__}: {e}", file=sys.stderr)
+    if failed: sys.exit(1)

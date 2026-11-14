@@ -102,7 +102,11 @@ fi
 ln -sfn $NEW $APP
 
 echo "== data/log/config dirs"
-install -d -m 750 -o nginx -g nginx $DATA $DATA/temp $LOGS
+install -d -m 750 -o nginx -g nginx $DATA $LOGS
+# temp/ sits inside a folder the web server owns: never let root follow a link someone put there (a compromised
+# webmail could aim it at /root). Remove a link, then create the folder AS nginx.
+[ -L $DATA/temp ] && rm -f $DATA/temp
+sudo -u nginx mkdir -p -m 750 $DATA/temp
 install -d -m 750 -o root -g nginx $CONF
 semanage fcontext -a -t httpd_sys_rw_content_t "$DATA(/.*)?" 2>/dev/null || semanage fcontext -m -t httpd_sys_rw_content_t "$DATA(/.*)?"
 semanage fcontext -a -t httpd_sys_rw_content_t "$LOGS(/.*)?" 2>/dev/null || semanage fcontext -m -t httpd_sys_rw_content_t "$LOGS(/.*)?"

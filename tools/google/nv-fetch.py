@@ -81,13 +81,18 @@ class Source:
     # Stalwart 1.0.1 can't query by header (filter "header" always matches nothing), so keep our own index of the
     # target account's Message-IDs: full load once, then Email/changes before each lookup.
     def _mids_of(self, ids):
+        """Message-IDs of these emails, leaving out copies that sit only in Junk or Trash: a stranger who knows a
+        message's Message-ID could otherwise send a fake (filed in Junk) and make the pull skip the real one."""
         out = set()
         for i in range(0, len(ids), 500):
-            for e in jmap([["Email/get", {"accountId": self.target, "ids": ids[i:i+500], "properties": ["messageId"]}, "g"]])[0][1]["list"]:
-                out.update(mid(m) for m in (e.get("messageId") or []))
+            for e in jmap([["Email/get", {"accountId": self.target, "ids": ids[i:i+500], "properties": ["messageId", "mailboxIds"]}, "g"]])[0][1]["list"]:
+                if set(e.get("mailboxIds") or {}) - self.binned:
+                    out.update(mid(m) for m in (e.get("messageId") or []))
         return out
 
     def load_index(self):
+        mbs = jmap([["Mailbox/get", {"accountId": self.target, "properties": ["role"]}, "m"]])[0][1]["list"]
+        self.binned = {m["id"] for m in mbs if m.get("role") in ("junk", "trash")}
         ids, pos = [], 0
         while True:
             r = jmap([["Email/query", {"accountId": self.target, "position": pos, "limit": 10000}, "q"]])[0][1]

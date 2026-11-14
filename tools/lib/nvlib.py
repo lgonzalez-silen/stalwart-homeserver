@@ -2,7 +2,7 @@
 # nv-set-password). Installed to /usr/local/lib/nv/ by recipe/09-ops.sh; the tools add that folder to sys.path.
 # One place for: site settings, the Stalwart admin API (with error checking), uploads, the server's Message-ID index,
 # and reading Gmail's special folders.
-import json, os, urllib.request
+import json, os, re, urllib.request
 
 API = "http://127.0.0.1:8080"
 KEYFILE = "/root/.secrets/laptop-api.key"   # admin API key limited to 127.0.0.1/::1 (recipe/07)
@@ -48,8 +48,25 @@ def upload(acct, raw, timeout=120):
 
 
 def mid(value):
-    """A Message-ID as compared everywhere in these tools: without <>, whitespace or line breaks, case kept."""
-    return str(value or "").strip("<> \r\n\t")
+    """A Message-ID as compared everywhere in these tools: without <> and without ANY whitespace or line breaks
+    (a folded header can carry CR/LF inside it; that must never reach an IMAP command), case kept."""
+    return re.sub(r"\s+", "", str(value or "")).strip("<>")
+
+
+def printable(text, limit=None):
+    """Text from strangers' mail, made safe to print: control characters (terminal escape sequences, line breaks)
+    become spaces. Use before printing subjects, senders or folder names."""
+    s = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", str(text or ""))
+    return s[:limit] if limit else s
+
+
+SAFE_MID = re.compile(r"^[!#-\[\]-~]+$")   # printable ASCII without space, " and \
+
+
+def imap_safe(value):
+    """True if a Message-ID can be put inside an IMAP search string as is. Anything else (it comes from strangers'
+    mail) must not be sent to Google: use Gmail's numeric X-GM-MSGID instead."""
+    return bool(SAFE_MID.match(value or ""))
 
 
 def message_ids(acct, skip_roles=(), skip_names=(), page=10000):

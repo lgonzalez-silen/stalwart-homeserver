@@ -171,8 +171,9 @@ def status(env, html):
     st = json.loads(r.stdout)
     if not html:
         print(f"{st['host']}  {st['generated']}  {st['attention']} item(s) need attention\n")
+        clean = lambda t: re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", str(t))   # no terminal escapes from remote text
         for k in st["checks"]:
-            print(f"{STATE_STYLE[k['state']][0]} {k['state'].upper():4}  {k['title']:24} {k['summary']}")
+            print(f"{STATE_STYLE[k['state']][0]} {k['state'].upper():4}  {clean(k['title']):24} {clean(k['summary'])}")
         return
     rows = []
     for k in st["checks"]:
