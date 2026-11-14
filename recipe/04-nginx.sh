@@ -4,10 +4,10 @@
 # Settings: server.hostname, server.ipv4, server.ipv6, webmail.hostname (default rc.<server.hostname>),
 # admin.allow (optional list of IPs/CIDRs allowed to reach the WebUI at /admin; empty = open). This only hides the
 # web console: the admin API itself is the JMAP endpoint every mail app uses, so it can't be IP-limited here. What
-# protects admin is TOTP on the admin account and an API key limited to 127.0.0.1/::1 (recipe/07).
+# protects admin is TOTP on the admin account and an API key limited to 127.0.0.1/::1 (recipe/05).
 #
 # First build: run this (nginx installed + tested, NOT started while Stalwart has 443), then
-# recipe/07-stalwart-settings.sh: it moves Stalwart's HTTP to 127.0.0.1:8080, sets X-Forwarded-For, removes Stalwart's
+# recipe/05-stalwart-settings.sh: it moves Stalwart's HTTP to 127.0.0.1:8080, sets X-Forwarded-For, removes Stalwart's
 # 443 listener, restarts Stalwart and starts nginx, then checks the admin console through nginx.
 #
 # Constraints from Stalwart 1.0 docs:
@@ -63,7 +63,7 @@ map \$self_ip \$perip_key { 1 ""; default \$binary_remote_addr; }
 limit_req_zone \$perip_key zone=perip:10m rate=20r/s;
 map \$request_method \$auth_post_key { POST \$binary_remote_addr; default ""; }
 limit_req_zone \$auth_post_key zone=authpost:10m rate=10r/m;
-# Roundcube login POSTs (./?_task=login), used by recipe/06-roundcube.sh
+# Roundcube login POSTs (./?_task=login), used by recipe/07-roundcube.sh
 map "\$request_method:\$arg__task" \$rc_login_key { "POST:login" \$binary_remote_addr; default ""; }
 limit_req_zone \$rc_login_key zone=rclogin:10m rate=10r/m;
 EOF
@@ -74,7 +74,7 @@ server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
-    # HTTP-01 for the per-domain mail helper cert (recipe/05-mail-domain-certs.sh)
+    # HTTP-01 for the per-domain mail helper cert (recipe/06-mail-domain-certs.sh)
     location ^~ /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
     location / { return 301 https://\$host\$request_uri; }
 }

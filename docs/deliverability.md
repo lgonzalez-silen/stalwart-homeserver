@@ -25,14 +25,14 @@ one file, and `dns/preview` shows what would change before `dns/push` applies it
 - [ ] **DMARC**: `TXT("_dmarc", "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:postmaster@example.com")`. Start
       with `p=none` for a week if other systems send as your domain, read the reports, then move to `reject`.
 - [ ] **MTA-STS**: `CNAME("mta-sts", "mail.example.com.")`, `TXT("_mta-sts", "v=STSv1; id=<any new number>")`, and
-      the policy served at `https://mta-sts.<domain>/.well-known/mta-sts.txt` (recipe 05 serves it; its `mx:` lines
+      the policy served at `https://mta-sts.<domain>/.well-known/mta-sts.txt` (recipe 06 serves it; its `mx:` lines
       come from `mail.mx_hosts`). Start in `testing`; switch Stalwart's policy to `enforce` after about two weeks of
       clean TLS reports, and change the `id` whenever the policy changes.
 - [ ] **TLS-RPT**: `TXT("_smtp._tls", "v=TLSRPTv1; rua=mailto:postmaster@example.com")`. Google and Microsoft then
       mail a daily report of TLS problems reaching you.
 - [ ] **Mail-app setup**: CNAMEs `autoconfig`, `autodiscover`, `ua-auto-config` → your server, the SRV records for
       `_submissions._tcp` (465), `_submission._tcp` (587), `_imaps._tcp` (993), and Stalwart's `_ua-auto-config` TXT.
-      Add the domain to `mail.helper_domains` so recipe 05 gets certificates for these names.
+      Add the domain to `mail.helper_domains` so recipe 06 gets certificates for these names.
 - [ ] **CAA**: only your CA may issue: `CAA("@", "issue", "letsencrypt.org")` (+ `issuewild`, + `iodef`).
 - [ ] **DNSSEC** on (at Cloudflare: one switch; if it's also your registrar, the DS record is added for you). Check
       with `dig +dnssec MX example.com @1.1.1.1`: the answer's flags should include `ad`.
@@ -55,7 +55,7 @@ one file, and `dns/preview` shows what would change before `dns/push` applies it
   normal mail. Ask the first few recipients to mark "Not spam".
 - **Your own test messages score oddly** (two-word test bodies look like spam). Test with real-looking mail.
 - **Outgoing DMARC and TLS reports** (the ones your server sends to others) are optional. They were most of the mail
-  this setup's server sent, some bounced, and failure reports go mostly to spammers' addresses, so recipe 07 turns
+  this setup's server sent, some bounced, and failure reports go mostly to spammers' addresses, so recipe 05 turns
   them off. Reports *about your domains* still arrive.
 
 ## When mail goes missing

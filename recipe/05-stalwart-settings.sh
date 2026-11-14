@@ -1,6 +1,6 @@
 #!/bin/bash
-# recipe/07-stalwart-settings.sh — Stalwart settings that live in its database (not in files)
-# Run from your computer:  ./nv run recipe/07-stalwart-settings.sh        (NV_SHOW=1 ./nv run ... : read-only check)
+# recipe/05-stalwart-settings.sh — Stalwart settings that live in its database (not in files)
+# Run from your computer:  ./nv run recipe/05-stalwart-settings.sh        (NV_SHOW=1 ./nv run ... : read-only check)
 # Runs on the server against the admin API on http://127.0.0.1:8080 with the API key in
 # /root/.secrets/laptop-api.key (an admin API key restricted to 127.0.0.1/::1; create it in the WebUI and store it
 # there, mode 0600). Password auth stops working once the admin account has TOTP, hence the key.

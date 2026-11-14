@@ -34,10 +34,10 @@ Not for: a business that needs an uptime guarantee, or anyone who never wants to
 |---|---|---|
 | Base OS | AlmaLinux 10, SELinux enforcing, firewalld, SSH keys only, automatic security updates (reboots when needed) | 01 |
 | TLS | one Let's Encrypt wildcard via Cloudflare DNS-01, used by nginx and Stalwart | 02 |
-| Mail | Stalwart 1.x (official binary); SMTP 25/465/587, IMAPS 993; HTTP behind nginx | 03, 07 |
+| Mail | Stalwart 1.x (official binary); SMTP 25/465/587, IMAPS 993; HTTP behind nginx | 03, 05 |
 | Front door | nginx owns 80/443, rate limits, security headers, config tested before every reload | 04 |
-| Per-domain helpers | MTA-STS policy, autoconfig/autodiscover for mail apps, and their certificates | 05 |
-| Webmail | Roundcube on its own subdomain, SQLite, signature-checked release; optional compact skin | 06, 06b |
+| Per-domain helpers | MTA-STS policy, autoconfig/autodiscover for mail apps, and their certificates | 06 |
+| Webmail | Roundcube on its own subdomain, SQLite, signature-checked release; optional compact skin | 07, 07b |
 | Backups | restic to Backblaze B2: nightly, encrypted, with a key that cannot delete; monthly verify | 08 |
 | Quiet operations | alerts only on failure; weekly release check; junk-spike watch | 09 |
 | Websites | static sites, no PHP | 10 |
@@ -85,20 +85,20 @@ Order matters. Each recipe's header says what it needs and what to check afterwa
 1. **Provider panel:** AlmaLinux 10 image with your SSH key; PTR records for both IPs → your server name; the
    provider firewall (if any) allowing TCP 22, 25, 80, 443, 465, 587, 993.
 2. **DNS:** A/AAAA for the server name, a wildcard under it for webmail, and for every mail domain the helper
-   CNAMEs (`mta-sts`, `autoconfig`, `autodiscover`, `ua-auto-config` → the server): recipe 05 needs them for its
+   CNAMEs (`mta-sts`, `autoconfig`, `autodiscover`, `ua-auto-config` → the server): recipe 06 needs them for its
    certificate. Copy [`dns/dnsconfig.example.js`](dns/dnsconfig.example.js) and fill in your values; the rest of the
    mail records (MX, SPF, DKIM, ...) come in step 6.
 3. `cp site.example.json site.json` and fill it in (reference below).
 4. In this order: `./nv run recipe/01-base.sh` (reboot if it says so), `02-certs.sh`, `03-stalwart.sh`, then
    Stalwart's setup wizard and its few manual steps ([`recipe/03-stalwart-wizard.md`](recipe/03-stalwart-wizard.md)),
-   then `04-nginx.sh` (installs nginx, doesn't start it), `07-stalwart-settings.sh` (settings, and the switch of
-   port 443 from Stalwart to nginx), `05-mail-domain-certs.sh`, `06-roundcube.sh`.
+   then `04-nginx.sh` (installs nginx, doesn't start it), `05-stalwart-settings.sh` (settings, and the switch of
+   port 443 from Stalwart to nginx), `06-mail-domain-certs.sh`, `07-roundcube.sh`.
 5. Backups and operations: `08-backup.sh` (create the B2 bucket and key first, see its header), then `09-ops.sh`.
    **Test a restore** ([`docs/restore.md`](docs/restore.md)) before you move real mail in.
 6. **Mail DNS** for each domain: MX, SPF, DKIM (values from Stalwart's WebUI), DMARC, MTA-STS and TLS-RPT TXT
    records, the SRV records and `_ua-auto-config`, then DNSSEC. Checklist and tests: [`docs/deliverability.md`](docs/deliverability.md).
 7. Accounts in Stalwart's WebUI; passwords with `nv-set-password` ([operations guide](docs/operations.md)).
-   Optional: `10-websites.sh`, `11-google.sh`, `06b-roundcube-skin.sh`.
+   Optional: `10-websites.sh`, `11-google.sh`, `07b-roundcube-skin.sh`.
 8. Move mail in ([`tools/migrate/`](tools/migrate/README.md)), then switch your MX records.
 
 ## `site.json` reference
@@ -114,7 +114,7 @@ Order matters. Each recipe's header says what it needs and what to check afterwa
 | `mail.max_message_mb` | largest message accepted (default 25, like Gmail; Roundcube attachments ~3/4 of it) |
 | `admin.allow` | optional IPs/CIDRs allowed to open the WebUI at `/admin` (the admin account has TOTP either way) |
 | `webmail.hostname`, `product_name` | Roundcube's address and the name on its login page |
-| `webmail.local_plugins`, `local_skins`, `compact_skin_source` | the optional skin and its plugins (recipe 06b) |
+| `webmail.local_plugins`, `local_skins`, `compact_skin_source` | the optional skin and its plugins (recipe 07b) |
 | `alerts.to`, `from`, `account` | who gets alerts, the sender shown, and the Stalwart account id of `to` |
 | `websites[]` | `name`, `cert` (`dns` or `http`), `source` (folder on your computer), `webmail_redirect` |
 | `google.sources[]` | `name`, `user`, `account`, `own`, optional `enabled`, `spam_mirror`, `keep_days` ([details](tools/google/README.md)) |
@@ -157,7 +157,7 @@ that were already running. Mail punishes mistakes quietly. Stay in the loop.
 ## Related
 
 - [roundcube-elastic-compact](https://github.com/lgonzalez-silen/roundcube-elastic-compact): the optional denser
-  Roundcube skin used by recipe 06b.
+  Roundcube skin used by recipe 07b.
 
 ## License
 

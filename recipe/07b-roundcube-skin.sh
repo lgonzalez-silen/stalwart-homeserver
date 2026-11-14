@@ -1,10 +1,10 @@
 #!/bin/bash
-# recipe/06b-roundcube-skin.sh — optional: the Elastic Compact skin + its plugins (repo roundcube-elastic-compact)
-# Run from your computer, after recipe/06 and after every Roundcube upgrade:
-#   ./nv sh recipe/06b-roundcube-skin.sh
+# recipe/07b-roundcube-skin.sh — optional: the Elastic Compact skin + its plugins (repo roundcube-elastic-compact)
+# Run from your computer, after recipe/07 and after every Roundcube upgrade:
+#   ./nv sh recipe/07b-roundcube-skin.sh
 # Settings: webmail.compact_skin_source = your checkout of roundcube-elastic-compact on this computer.
 # Also add "elastic_compact" and "login_refresh" to webmail.local_plugins and "elastic_compact" to
-# webmail.local_skins, then re-run recipe/06: it enables the plugins and carries all three over on upgrades.
+# webmail.local_skins, then re-run recipe/07: it enables the plugins and carries all three over on upgrades.
 # Users pick the skin in Settings > Preferences > User Interface > Interface skin (the default stays elastic).
 set -euo pipefail
 SRC=${NV_WEBMAIL_COMPACT_SKIN_SOURCE:?set webmail.compact_skin_source in site.json}; SRC=${SRC/#\~/$HOME}

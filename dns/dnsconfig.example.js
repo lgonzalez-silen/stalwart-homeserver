@@ -8,7 +8,7 @@
 //
 // DKIM and _ua-auto-config values: Stalwart WebUI › Domains › <domain> › DNS records.
 // Every domain listed in site.json mail.helper_domains needs the mta-sts, autoconfig, autodiscover and
-// ua-auto-config CNAMEs below before recipe/05 runs (it gets one certificate for all of them).
+// ua-auto-config CNAMEs below before recipe/06 runs (it gets one certificate for all of them).
 // Quote TXT values exactly as shown; DNSControl splits long ones (>255 chars) for you.
 
 var REG_NONE = NewRegistrar("none");
@@ -34,7 +34,7 @@ D("example.com", REG_NONE, DnsProvider(DSP),
     TXT("v1-rsa-20260101._domainkey", "v=DKIM1; k=rsa; h=sha256; p=REPLACE_FROM_STALWART"),
     TXT("_dmarc", "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:postmaster@example.com"),
 
-    // TLS for mail between servers: MTA-STS policy (served by recipe/05) + TLS reports.
+    // TLS for mail between servers: MTA-STS policy (served by recipe/06) + TLS reports.
     // Change the id whenever the policy changes (any new number). Start the policy in mode "testing".
     CNAME("mta-sts", SERVER),
     TXT("_mta-sts", "v=STSv1; id=20260101"),

@@ -10,7 +10,7 @@
 #   - nv-status (every 15 min): the dashboard behind ./nv status; mails only when a critical check turns bad.
 # Also installs /etc/nv/site.json, which the tools on the server read.
 # Not here on purpose: Cockpit (no web console; SSH keys only), mail summaries of routine updates.
-# Not checked: the pinned Stretched Elastic skin commit (recipe/06); look at it when upgrading Roundcube.
+# Not checked: the pinned Stretched Elastic skin commit (recipe/07); look at it when upgrading Roundcube.
 # Run from your computer:  ./nv run recipe/09-ops.sh
 live && { command -v nv-alert >/dev/null || { echo "run recipe/08-backup.sh first (provides nv-alert)"; exit 1; }; }
 systemctl cat nv-alert@.service >/dev/null 2>&1 || { echo "run recipe/08-backup.sh first (provides nv-alert@)"; exit 1; }
@@ -131,4 +131,4 @@ repo_file tools/ops/nv-status.timer | put /etc/systemd/system/nv-status.timer
 systemctl daemon-reload
 systemctl enable -q --now nv-junk-report.timer
 systemctl enable -q --now nv-status.timer
-live && /usr/local/sbin/nv-status --print | head -40   # first run: what the dashboard shows
+if live; then /usr/local/sbin/nv-status --print | head -40; fi   # first run: what the dashboard shows

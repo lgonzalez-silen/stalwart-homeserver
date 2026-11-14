@@ -5,7 +5,7 @@
 import json, os, re, urllib.request
 
 API = "http://127.0.0.1:8080"
-KEYFILE = "/root/.secrets/laptop-api.key"   # admin API key limited to 127.0.0.1/::1 (recipe/07)
+KEYFILE = "/root/.secrets/laptop-api.key"   # admin API key limited to 127.0.0.1/::1 (recipe/05)
 MAIL = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"]
 ADMIN = ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"]
 _key = None

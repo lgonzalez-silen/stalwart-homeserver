@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mbox2maildir as M2M   # noqa: E402  (same folder)
 from zoneinfo import ZoneInfo  # noqa: E402
 
-K = open("/root/.secrets/laptop-api.key").read().strip(); B = "http://127.0.0.1:8080"   # admin API key (recipe/07)
+K = open("/root/.secrets/laptop-api.key").read().strip(); B = "http://127.0.0.1:8080"   # admin API key (recipe/05)
 M2M.TZ = ZoneInfo(M2M._site_tz())
 KW = {"S": "$seen", "R": "$answered", "F": "$flagged", "D": "$draft", "P": "$forwarded"}
 

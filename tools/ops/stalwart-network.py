@@ -1,10 +1,10 @@
-# stalwart-network.py: run by recipe/07 on the server (python3 - <cutover yes|no> <show 1|"">).
+# stalwart-network.py: run by recipe/05 on the server (python3 - <cutover yes|no> <show 1|"">).
 # Brings Stalwart's listeners, allowed IPs and log format to the state this setup expects, through the admin API.
 # Prints every change; with show=1 it only prints what it would change.
 #   always:   sieve on 127.0.0.1:4190 only; submission on 587 (STARTTLS) exists; pop3/pop3s removed;
 #             allowed IPs 127.0.0.1, ::1 and the server's own IPv4/IPv6; log-file tracers without ANSI colors
 #   cutover:  http on 127.0.0.1:8080 only; Client IP source = X-Forwarded-For (1 hop); the https 443 listener removed.
-#             recipe/07 then restarts Stalwart and starts nginx (only when nginx isn't running yet).
+#             recipe/05 then restarts Stalwart and starts nginx (only when nginx isn't running yet).
 import json, os, sys, urllib.request
 
 CUT = sys.argv[1] == "yes"
@@ -47,7 +47,7 @@ have = {a["address"] for a in api([["x:AllowedIp/get", {"ids": None}, "a"]])[0][
 for ip in IPS:
     if ip not in have:
         change(f"allowed IP {ip} (auto-ban exemption)", ["x:AllowedIp/set", {"create": {"n": {
-            "address": ip, "reason": "the server itself (recipe/07)", "createdAt": "2026-01-01T00:00:00Z"}}}, "c"])
+            "address": ip, "reason": "the server itself (recipe/05)", "createdAt": "2026-01-01T00:00:00Z"}}}, "c"])
 
 for t in api([["x:Tracer/get", {"ids": None, "properties": ["path", "ansi"]}, "t"]])[0][1]["list"]:
     if t.get("path") and t.get("ansi"):

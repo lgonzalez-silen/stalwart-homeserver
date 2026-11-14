@@ -112,9 +112,20 @@ def check_os():
         n, "updates")
 
 
+def stamp(path):
+    """First field of a small status file the backup scripts write (ISO time), as a datetime, or None."""
+    try:
+        return datetime.datetime.strptime(open(path).read().split()[0], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 @guard
 def check_backup():
     res, at = unit_result("nv-backup.service")
+    ok_at = stamp("/var/backups/nv/last-backup-ok")   # written by nv-backup on success; survives reboots
+    if ok_at and (at is None or res == "success"):
+        at = ok_at if at is None or ok_at > at else at
     age = hours_since(at)
     if at is None:   # never ran yet (a new server): not an alarm until the timer has had two nights
         _, since = run("systemctl", "show", "nv-backup.timer", "-p", "ActiveEnterTimestamp", "--value")
@@ -131,9 +142,17 @@ def check_backup():
         state = "crit" if age > 48 else "warn" if age > 30 else "ok"
         summary = f"last good backup {age:.0f} h ago"
     add("backup", "backups", "Nightly backup", state, summary, round(age, 1) if age is not None else None, "h", critical=True)
-    res2, at2 = unit_result("nv-backup-check.service")   # a unit that never ran reports "success": use the timestamp
-    add("backup-check", "backups", "Monthly backup check", "warn" if at2 and res2 != "success" else "ok",
-        (f"last check: {res2}, {at2:%Y-%m-%d}" if at2 else "not run yet (1st of the month)"))
+    try:   # written by nv-backup-check: "<time> OK" or "<time> FAILED (exit n)"; survives reboots
+        chk = open("/var/backups/nv/last-check").read().split(None, 1)
+    except OSError:
+        chk = []
+    if chk:
+        add("backup-check", "backups", "Monthly backup check", "ok" if chk[1].strip() == "OK" else "warn",
+            f"last check {chk[0][:10]}: {chk[1].strip()}")
+    else:
+        res2, at2 = unit_result("nv-backup-check.service")   # never-run units report "success": use the timestamp
+        add("backup-check", "backups", "Monthly backup check", "warn" if at2 and res2 != "success" else "ok",
+            (f"last check: {res2}, {at2:%Y-%m-%d}" if at2 else "no check recorded yet (runs on the 1st)"))
 
 
 @guard

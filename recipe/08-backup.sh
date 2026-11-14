@@ -99,6 +99,7 @@ echo "stalwart snapshot: $(echo "$(date +%s.%N) - $t0" | bc) s of downtime"
 sqlite3 /var/lib/roundcube/roundcube.db ".backup /var/backups/nv/roundcube.db"
 restic backup --host nv --tag nightly --no-scan "$SNAP" /var/backups/nv/roundcube.db "${EXTRA[@]}"
 rm -rf "$SNAP"
+date -u +%Y-%m-%dT%H:%M:%SZ > /var/backups/nv/last-backup-ok   # for the dashboard (survives reboots; systemd's record doesn't)
 # everything else is backed up; fail the run (-> alert) so a missing Google state never goes unnoticed
 [ -z "$STATE_FAILED" ] || { echo "could not copy /var/lib/nv-fetch/state.db: tonight's backup lacks the Google state"; exit 1; }
 if [ "$(date +%u)" = 7 ] || [ "${1:-}" = --prune ]; then
@@ -108,7 +109,7 @@ EOF
 
 put /usr/local/sbin/nv-backup-check 700 <<'EOF'
 #!/bin/bash
-# Monthly: verify repository structure + re-download and verify 10% of the data; mail a report either way.
+# Monthly: verify repository structure + re-download and verify 10% of the data; mail only if it finds a problem.
 set -uo pipefail
 set -a; . /root/.secrets/restic.env; set +a
 export RESTIC_CACHE_DIR=/var/cache/restic
@@ -118,6 +119,7 @@ out=$(mktemp); rc=0
   echo; echo "== check (structure + 10% of data re-downloaded)"; } >"$out" 2>&1
 restic check --read-data-subset=10% >>"$out" 2>&1 || rc=$?
 status=$([ $rc = 0 ] && echo OK || echo "FAILED (exit $rc)")
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $status" > /var/backups/nv/last-check   # for the dashboard
 # mail only when something is wrong; a good check shows on the dashboard (nv-status)
 [ $rc = 0 ] || nv-alert "monthly backup check: $status" <"$out"
 rm -f "$out"; exit $rc

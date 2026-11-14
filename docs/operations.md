@@ -64,7 +64,7 @@ password. If an app asks for servers: incoming IMAP `<server>` port 993 SSL; out
 
 **Add a domain.** DNS first (see [deliverability](deliverability.md)), then in the WebUI add the domain and copy its
 DKIM records into your DNS file, then add it to `mail.helper_domains` in `site.json` and run
-`./nv run recipe/05-mail-domain-certs.sh` (it needs the mta-sts/autoconfig CNAMEs to exist). Test with a message
+`./nv run recipe/06-mail-domain-certs.sh` (it needs the mta-sts/autoconfig CNAMEs to exist). Test with a message
 from Gmail before telling anyone.
 
 **Add a Google account to pull from.** See [`tools/google/README.md`](../tools/google/README.md).
@@ -92,9 +92,9 @@ If you ever have to change something by hand on the server, put it into the repo
 `recipe/03-stalwart.sh`'s header: it takes an instant copy-on-write snapshot of the data directory first, so going
 back is a rename, and the downtime is a couple of seconds.
 
-**Roundcube:** bump `VER` in `recipe/06-roundcube.sh`, render + diff, run. The release's PGP signature is checked
+**Roundcube:** bump `VER` in `recipe/07-roundcube.sh`, render + diff, run. The release's PGP signature is checked
 against the Roundcube signing key; the old version's directory stays for rollback (`ln -sfn <old dir> /var/www/roundcube`). If
-you use the compact skin, re-run `06b` afterwards.
+you use the compact skin, re-run `07b` afterwards.
 
 **restic, identity_smtp:** bump the version in their recipe, render + diff, run.
 

@@ -6,10 +6,10 @@ handle it.
 ## Configuration
 
 - **Most settings live in Stalwart's database, not in files.** `/etc/stalwart/config.json` only says where the data
-  store is. Everything else is set in the WebUI or through the admin API (`x:<Object>/set` JMAP methods). Recipe 07
+  store is. Everything else is set in the WebUI or through the admin API (`x:<Object>/set` JMAP methods). Recipe 05
   sets the ones this setup changes, so they're written down and re-appliable.
 - **The admin account should have TOTP**, and then password login for scripts stops working. Scripts use an API key
-  limited to 127.0.0.1/::1 instead (`/root/.secrets/laptop-api.key`, recipe 07 header).
+  limited to 127.0.0.1/::1 instead (`/root/.secrets/laptop-api.key`, recipe 05 header).
 - **Some settings apply only at the next restart** (the DMARC/TLS report settings, for example). The nightly backup
   restarts Stalwart (~2 s), so "tomorrow" is the usual answer.
 - **The WebUI's OAuth sign-in works only on Stalwart's public URL**, so the admin console lives at
@@ -19,9 +19,9 @@ handle it.
 
 - **`Email/import` (JMAP) and IMAP `APPEND` skip the spam filter.** Right for migrations and for the Google pull;
   it also means alerts imported this way can't land in Junk (recipe 08's `nv-alert` relies on it).
-- **Message-ID and Date headers**: Stalwart adds them only on port 25 by default. Recipe 07 adds them when missing
+- **Message-ID and Date headers**: Stalwart adds them only on port 25 by default. Recipe 05 adds them when missing
   on every port, so mail from scripts and old clients is well-formed (Gmail rejects mail without them).
-- **Message size**: Stalwart's default limit is 100 MB. Recipe 07 sets `mail.max_message_mb` (25 by default).
+- **Message size**: Stalwart's default limit is 100 MB. Recipe 05 sets `mail.max_message_mb` (25 by default).
 - **Bare login names work only for the default domain.** Users on other domains log in with the full address.
 
 ## Spam filter
@@ -38,7 +38,7 @@ handle it.
 
 ## Security
 
-- **Auto-ban**: in 1.0.x an empty ban period meant permanent. Recipe 07 sets expiring bans (failed logins: 30 a day,
+- **Auto-ban**: in 1.0.x an empty ban period meant permanent. Recipe 05 sets expiring bans (failed logins: 30 a day,
   then a 1-day ban), so a stale password on a home device can't lock the household out forever. Add the server's
   own addresses to the allowed IPs, or webmail's SMTP from the server can ban the server itself.
 - **Client IP behind nginx**: set "Client IP source = X-Forwarded-For, 1 hop" in the WebUI, or every HTTP client
@@ -51,7 +51,7 @@ handle it.
 - **Stalwart shows the DNS records it wants** per domain (WebUI → Domains → DNS records): use them as the reference
   for MX, SPF, DKIM, MTA-STS, TLS-RPT and the mail-app setup names.
 - **MTA-STS `mx` lines**: Stalwart's default policy lists only the server's own name. If your MX records use another
-  name too, recipe 07 sets them from `mail.mx_hosts`.
+  name too, recipe 05 sets them from `mail.mx_hosts`.
 
 ## Upgrades and migration
 

@@ -42,7 +42,7 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
 
 5. What wasn't in the backup, on purpose:
    - TLS certificates: recipe 02 issues new ones.
-   - Roundcube's `des_key`: recipe 06 makes a new one, so outgoing-server passwords saved per identity (the
+   - Roundcube's `des_key`: recipe 07 makes a new one, so outgoing-server passwords saved per identity (the
      `identity_smtp` plugin) can't be read. Re-enter them under Settings → Identities, or with
      `tools/migrate/rc-smtp-password.php`.
    - The tools' API key: the restored database has the API key you made before, but `/root/.secrets/laptop-api.key`

@@ -1,9 +1,9 @@
 #!/bin/bash
-# recipe/06-roundcube.sh — Roundcube webmail at https://<webmail.hostname> (<server.hostname>/rc redirects)
-# Run from your computer:  ./nv run recipe/06-roundcube.sh
+# recipe/07-roundcube.sh — Roundcube webmail at https://<webmail.hostname> (<server.hostname>/rc redirects)
+# Run from your computer:  ./nv run recipe/07-roundcube.sh
 # Settings: server.hostname, server.timezone, webmail.hostname (default rc.<server.hostname>),
 # webmail.product_name, webmail.local_plugins / webmail.local_skins (installed outside the Roundcube release,
-# e.g. by recipe/06b; enabled here and carried over on upgrades).
+# e.g. by recipe/07b; enabled here and carried over on upgrades).
 #
 # Why its own subdomain: browser origin isolation. Stalwart's admin/OAuth lives on
 # https://<server.hostname>; Roundcube has a history of XSS bugs, so it must not share that origin.
@@ -14,7 +14,7 @@
 # TLS options for external servers, so they can't pin peer_name. SMTP auth only follows a good IMAP login.
 # Storage: SQLite (WAL) in /var/lib/roundcube. Config + des_key in /etc/roundcube (survive upgrades).
 
-VER=1.7.6                              # upgrade: bump, run this, then recipe/06b (rebuild the compact CSS first)
+VER=1.7.6                              # upgrade: bump, run this, then recipe/07b (rebuild the compact CSS first)
 # identity_smtp (third-party, per-identity SMTP server): tag 1.7.0 = commit bb4792cc (2026-03-27)
 IDSMTP_VER=1.7.0
 IDSMTP_SHA256=fc4b54a9a2dab6ec0c2232c26baab694667f1f1bd28630f944ea3cc509edffa7   # repo moved elm/ -> deflomu/ (same repo id 2802192, same maintainer); checked 2026-11-11
@@ -92,7 +92,7 @@ NEW=/var/www/roundcubemail-$VER
 rm -rf $NEW/installer
 CUR=$(readlink -f $APP 2>/dev/null || true)
 if [ -n "$CUR" ] && [ "$CUR" != "$NEW" ]; then
-  # carry our own plugins + skin over so the switch never runs without them (recipe/06b refreshes them after)
+  # carry our own plugins + skin over so the switch never runs without them (recipe/07b refreshes them after)
   for x in $(for p in ${NV_WEBMAIL_LOCAL_PLUGINS:-}; do echo plugins/$p; done) $(for s in ${NV_WEBMAIL_LOCAL_SKINS:-}; do echo skins/$s; done); do
     [ -e "$CUR/$x" ] && [ ! -e "$NEW/$x" ] && cp -a "$CUR/$x" "$NEW/$x"
   done
@@ -120,7 +120,7 @@ PRODUCT=${NV_WEBMAIL_PRODUCT_NAME:-Webmail}; PRODUCT_PHP=${PRODUCT//\\/\\\\}; PR
 RC_MAXMSG=$(( ${NV_MAIL_MAX_MESSAGE_MB:-25} * 3 / 4 ))   # attachments: base64 makes a message ~1/3 bigger than its files
 put $CONF/config.inc.php 640 root:nginx <<EOF
 <?php
-// Managed by recipe/06-roundcube.sh — edit there, not here.
+// Managed by recipe/07-roundcube.sh — edit there, not here.
 \$tls = ['ssl' => ['verify_peer' => true, 'verify_peer_name' => true,
                    'peer_name' => '$MAILHOST', 'cafile' => '/etc/pki/tls/certs/ca-bundle.crt']];
 
@@ -206,7 +206,9 @@ systemctl reload nginx
 
 echo "== checks"
 # nginx was just reloaded: give its new workers a moment (a request during the switch can be dropped)
-for i in 1 2 3 4 5; do code=$(curl -s -o /dev/null -w "%{http_code}" --resolve $HOST:443:127.0.0.1 https://$HOST/ || true)
-  [ "$code" = 200 ] && break; sleep 1; done
-echo "login page via nginx: $code"; [ "$code" = 200 ] || { echo "webmail is not answering: systemctl status nginx php-fpm"; exit 1; }
+if live; then
+  for i in 1 2 3 4 5; do code=$(curl -s -o /dev/null -w "%{http_code}" --resolve $HOST:443:127.0.0.1 https://$HOST/ || true)
+    [ "$code" = 200 ] && break; sleep 1; done
+  echo "login page via nginx: $code"; [ "$code" = 200 ] || { echo "webmail is not answering: systemctl status nginx php-fpm"; exit 1; }
+fi
 sudo -u nginx sqlite3 $DATA/roundcube.db 'PRAGMA journal_mode;' | sed 's/^/sqlite journal_mode: /'

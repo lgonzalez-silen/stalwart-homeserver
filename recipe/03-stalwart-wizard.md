@@ -61,8 +61,8 @@ all under it.
   and keep a copy in your password manager.
 
 **That's all by hand.** Listeners (587, sieve on 127.0.0.1, POP3 off), allowed IPs, the log format and the
-cutover from Stalwart's own 443 to nginx are done by `recipe/07-stalwart-settings.sh` through the API, with the
-key you just made: run `04-nginx.sh`, then `07-stalwart-settings.sh` (`NV_SHOW=1` first to see what it will do).
+cutover from Stalwart's own 443 to nginx are done by `recipe/05-stalwart-settings.sh` through the API, with the
+key you just made: run `04-nginx.sh`, then `05-stalwart-settings.sh` (`NV_SHOW=1` first to see what it will do).
 Don't change listeners by hand: deleting 443 before nginx runs locks you out of this console.
 
 Menu names can differ between Stalwart versions: if one isn't where this says, the settings search finds it. Write
