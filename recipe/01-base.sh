@@ -86,6 +86,9 @@ done
 firewall-cmd -q --reload
 
 echo "== SSH: keys only"
+# Refuse to switch password login off unless root can log in with a key (or you'd be left with the provider console)
+live && { [ -s /root/.ssh/authorized_keys ] && grep -qE '^(ssh-|ecdsa-|sk-)' /root/.ssh/authorized_keys || {
+  echo "no SSH key in /root/.ssh/authorized_keys: add yours first (provider panel or ssh-copy-id), then re-run"; exit 1; }; }
 put /etc/ssh/sshd_config.d/10-hardening.conf <<'EOF'
 # Loaded before 50-cloud-init.conf, so these win (first match applies)
 PasswordAuthentication no

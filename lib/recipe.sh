@@ -23,10 +23,15 @@ if [ -n "${NV_RENDER:-}" ]; then
 else
   run() { "$@"; }
   live() { return 0; }
-  _NGINX_PUT=/run/nv-nginx-put.$$   # nginx files written this run (a file, not an array: put may run in a pipe)
+  # nginx files changed this run, kept in a file (not an array: put may run in a pipe, i.e. a subshell)
+  _NGINX_PUT=$(mktemp /run/nv-nginx-put.XXXXXX); trap 'rm -f "$_NGINX_PUT"' EXIT
   nginx_track() {  # nginx_track <file>: back up a file before changing it, so nginx_apply can put it back.
                    # An older backup left by an interrupted run is kept: it is the last version that passed the test.
-    [ -e "$1.nv-prev" ] || { [ -e "$1" ] && cp -p "$1" "$1.nv-prev"; } || true
+                   # A file that doesn't exist yet gets a .nv-new marker, so the rollback knows it may remove it.
+    if [ ! -e "$1.nv-prev" ] && [ ! -e "$1.nv-new" ]; then
+      if [ -e "$1" ]; then cp -p "$1" "$1.nv-prev" || { echo "can't back up $1: stopping" >&2; exit 1; }
+      else : > "$1.nv-new"; fi
+    fi
     echo "$1" >> "$_NGINX_PUT"
   }
   put() {  # put <path> [mode] [owner[:group]] < content: writes the whole file (keeps the inode and SELinux label)
@@ -47,15 +52,16 @@ else
       printf '%s\n' "$out" >&2
       for p in "${list[@]}"; do   # no pipe/subshell: one failed restore must not stop the others
         if [ -e "$p.nv-prev" ]; then mv -f "$p.nv-prev" "$p" || echo "could not restore $p" >&2
-        else rm -f "$p" || echo "could not remove $p" >&2; fi
+        elif [ -e "$p.nv-new" ]; then rm -f "$p" "$p.nv-new" || echo "could not remove $p" >&2
+        else echo "no backup of $p: left as it is (check it by hand)" >&2; fi
       done
-      rm -f "$_NGINX_PUT"
+      : > "$_NGINX_PUT"
       echo "nginx config test FAILED: the previous config is back in place, nothing reloaded" >&2
       exit 1
     fi
     printf '%s\n' "$out" | grep -F '[warn]' >&2 || true   # warnings (e.g. a duplicate server_name) stay visible
-    for p in "${list[@]}"; do rm -f "$p.nv-prev"; done
-    rm -f "$_NGINX_PUT"
+    for p in "${list[@]}"; do rm -f "$p.nv-prev" "$p.nv-new"; done
+    : > "$_NGINX_PUT"
     case ${1:-reload} in none) ;; *) systemctl "${1:-reload}" nginx ;; esac
   }
 fi

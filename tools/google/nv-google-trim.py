@@ -12,10 +12,11 @@
 #        nv-google-trim --max N              (stop after N moves per source in this run; default 50000)
 import sys, os, time, json, re, imaplib, email, email.policy, datetime, sqlite3, urllib.request
 
-sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))  # repo copy last
 from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
 SITE = site()   # installed by recipe/09-ops.sh
-SOURCES = {s["name"]: (s["user"], s["account"], int(s["keep_days"])) for s in SITE["google"]["sources"] if s.get("keep_days")}
+SOURCES = {s["name"]: (s["user"], s["account"], int(s["keep_days"])) for s in SITE["google"]["sources"]
+           if s.get("keep_days") and s.get("enabled", True)}   # enabled: false pauses the trim too
 STATE = "/var/lib/nv-fetch/state.db"
 DRY = "--dry" in sys.argv
 MAX = int(sys.argv[sys.argv.index("--max") + 1]) if "--max" in sys.argv else 50000

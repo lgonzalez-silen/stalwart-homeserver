@@ -4,7 +4,7 @@
 # IMAP login on localhost. Run it interactively over ssh -t; the password never appears in logs or arguments.
 # --random: set a random password instead of prompting (used to test this script on unused accounts).
 import os, sys, getpass, imaplib, ssl, secrets, subprocess
-sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))  # repo copy last
 from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
 def j(calls): return jmap(calls, using=ADMIN, timeout=30)
 

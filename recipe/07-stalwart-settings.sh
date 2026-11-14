@@ -59,7 +59,14 @@ if [ "${NV_SHOW:-}" != 1 ]; then
       \"failureSendFrequency\":{\"match\":{},\"else\":\"disable\"}}}},\"r\"],
     [\"x:TlsReportSettings/set\",{\"accountId\":\"b\",\"update\":{\"singleton\":{
       \"sendFrequency\":{\"match\":{},\"else\":\"disable\"}}}},\"t\"]]}" \
-    | jq -c '.methodResponses[] | [.[0], (.[1].updated // .[1].notUpdated)]'
+    > /tmp/nv-07.$$ || { echo "settings request failed (HTTP error)"; exit 1; }
+  if live; then
+    jq -c '.methodResponses[] | [.[0], (.[1].updated // .[1].notUpdated)]' /tmp/nv-07.$$
+    # a setting Stalwart rejected (renamed field after an upgrade, bad value) must not look like success
+    bad=$(jq '[.methodResponses[] | select(.[0] == "error" or (.[1].notUpdated // {} | length) > 0)] | length' /tmp/nv-07.$$)
+    rm -f /tmp/nv-07.$$
+    [ "$bad" = 0 ] || { echo "Stalwart REJECTED $bad of the settings above: nothing else is wrong, but fix these"; exit 1; }
+  fi
 fi
 
 J '{"using":["urn:ietf:params:jmap:core"],"methodCalls":[

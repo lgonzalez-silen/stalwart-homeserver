@@ -10,6 +10,7 @@
 #     Stalwart stopped for ~2 s, uploaded afterwards (copying a live RocksDB dir isn't consistent)
 #   - Roundcube's SQLite DB (identities, prefs; SMTP passwords inside are encrypted with des_key,
 #     which is NOT backed up, so they're unreadable in the backup)
+#   - the Google module's state DB (/var/lib/nv-fetch/state.db), if recipe/11 is used
 # B2 side (set up once from your computer with the B2 master key): a private bucket with lifecycle
 # "hidden files deleted after 30 days"; an application key that is bucket-only with list/read/write but
 # NO deleteFiles (restic hides instead of deleting, so an attacker with root on the server can't destroy
@@ -87,7 +88,11 @@ systemctl start stalwart
 trap - EXIT
 echo "stalwart snapshot: $(echo "$(date +%s.%N) - $t0" | bc) s of downtime"
 sqlite3 /var/lib/roundcube/roundcube.db ".backup /var/backups/nv/roundcube.db"
-restic backup --host nv --tag nightly --no-scan "$SNAP" /var/backups/nv/roundcube.db
+# the Google module's state (where each pull stopped, what was mirrored/trimmed): without it a restored server
+# would start pulling "from now" and skip mail that arrived after the backup
+EXTRA=(); [ -f /var/lib/nv-fetch/state.db ] && sqlite3 /var/lib/nv-fetch/state.db ".backup /var/backups/nv/nv-fetch-state.db" \
+  && EXTRA=(/var/backups/nv/nv-fetch-state.db)
+restic backup --host nv --tag nightly --no-scan "$SNAP" /var/backups/nv/roundcube.db "${EXTRA[@]}"
 rm -rf "$SNAP"
 if [ "$(date +%u)" = 7 ] || [ "${1:-}" = --prune ]; then
   restic forget --host nv --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune

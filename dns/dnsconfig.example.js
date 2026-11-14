@@ -6,7 +6,9 @@
 //   dnscontrol get-zones --format=js --out=imported.js cloudflare - all
 // and merge the mail records below into it. The first preview should then show only what you meant to change.
 //
-// DKIM values: Stalwart WebUI › Domains › <domain> › DNS records (copy the two _domainkey TXT values).
+// DKIM and _ua-auto-config values: Stalwart WebUI › Domains › <domain> › DNS records.
+// Every domain listed in site.json mail.helper_domains needs the mta-sts, autoconfig, autodiscover and
+// ua-auto-config CNAMEs below before recipe/05 runs (it gets one certificate for all of them).
 // Quote TXT values exactly as shown; DNSControl splits long ones (>255 chars) for you.
 
 var REG_NONE = NewRegistrar("none");
@@ -41,6 +43,8 @@ D("example.com", REG_NONE, DnsProvider(DSP),
     // Mail app setup: autoconfig (Thunderbird and others), autodiscover (Outlook), SRV records (RFC 6186/8314)
     CNAME("autoconfig", SERVER),
     CNAME("autodiscover", SERVER),
+    CNAME("ua-auto-config", SERVER),
+    TXT("_ua-auto-config", "v=UAAC1; a=sha256; d=REPLACE_FROM_STALWART"),   // Stalwart WebUI › Domains › DNS records
     SRV("_submissions._tcp", 0, 1, 465, SERVER),
     SRV("_submission._tcp", 0, 1, 587, SERVER),
     SRV("_imaps._tcp", 0, 1, 993, SERVER),

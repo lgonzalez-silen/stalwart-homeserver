@@ -27,7 +27,7 @@ Let the **server** check all the Google accounts, and point your **phone and lap
 
 | Piece | Runs | Does |
 |---|---|---|
-| `nv-fetch` | always on (IMAP IDLE) | New mail at Google → the Stalwart account. Everything except Sent, Trash and Spam. |
+| `nv-fetch` | always on (checks every 60 s) | New mail at Google → the Stalwart account. Everything except Sent, Trash and Spam. |
 | `nv-spam-mirror` | every 5 min | A **"Google Spam"** folder showing what Google filtered, so you notice what to rescue. |
 | `nv-google-trim` | weekly, only for sources with `keep_days` | Moves Google mail older than `keep_days` to that account's Trash, **only when the same message is on your server**. |
 | `nv-fetch-secret` | once per source | Stores the source's app password (typed without echo, tested with a real login). |

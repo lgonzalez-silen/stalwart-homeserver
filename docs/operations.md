@@ -8,13 +8,13 @@ the repo (edit, render, diff, run).
 
 | When (UTC) | What | You hear about it |
 |---|---|---|
-| every 5 min | `nv-spam-mirror` (Google module): keeps the "Google Spam" folder in step | only on failure |
+| every 5 min | `nv-spam-mirror` (Google module): keeps the "Google Spam" folder in step | no alert (see below); check `journalctl -u nv-spam-mirror` now and then |
 | always on | `nv-fetch` (Google module): pulls new Google mail | after ~10 failures in a row, once a day |
 | 03:15 nightly | `nv-backup`: Stalwart stopped ~2 s for a snapshot, then upload to B2; weekly prune on Sundays | only on failure |
 | early morning | `dnf-automatic`: OS security updates, reboot when an update needs one | only on failure |
 | twice a day | `certbot-renew`: certificates renew ~30 days before expiry; nginx and Stalwart reload | only on failure |
 | 13:00 daily | `nv-junk-report`: watches each account's Junk; prunes Junk of `junk_report.detail_accounts` | only on a spike |
-| Sun 14:00 | `nv-google-trim` (Google module, only sources with `keep_days`) | only on failure or refusals |
+| Sun 14:00 | `nv-google-trim` (Google module, only sources with `keep_days`) | on failure, or more than 20 messages Google refuses to move (fewer are logged and skipped) |
 | Mon 14:00 | `nv-release-check`: Stalwart, Roundcube, identity_smtp, restic | once per new upstream version |
 | 1st, 05:00 | `nv-backup-check`: verifies the backup repository and re-reads 10% of it | always (a monthly report) |
 
@@ -92,7 +92,9 @@ you use the compact skin, re-run `06b` afterwards.
 ## Backups and restores
 
 Nightly to B2, encrypted on the server before upload, kept 14 daily / 8 weekly / 12 monthly. The B2 key can't delete
-anything, so even someone with root on the server can't destroy your history. What's backed up: Stalwart's data (all
+files, only hide them, and B2 removes hidden files after 30 days: someone with root on the server can't destroy
+your history for 30 days, which is your window to notice and react (the monthly check is one signal). For more, keep
+an occasional offline copy. What's backed up: Stalwart's data (all
 mail, accounts, settings, DKIM keys) and Roundcube's database. Not backed up, on purpose: configuration (the recipes
 rebuild it) and secrets (your password manager has them).
 

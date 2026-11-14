@@ -10,7 +10,7 @@
 #        nv-junk-report --dry    print counts only; nothing mailed or deleted
 import json, os, sys, subprocess, datetime, collections, urllib.request
 
-sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))  # repo copy last
 from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
 SITE = site()   # installed by recipe/09-ops.sh
 CONF = SITE.get("junk_report", {})

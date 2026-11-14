@@ -112,6 +112,7 @@ echo "== config (des_key generated once, kept in $CONF)"
 live && { [ -s $CONF/des_key ] || { umask 077; openssl rand -base64 24 | tr -d '\n' > $CONF/des_key; }; }
 chown root:nginx $CONF/des_key; chmod 640 $CONF/des_key
 if live; then DES=$(cat $CONF/des_key); else DES='<secret:des_key>'; fi
+PRODUCT=${NV_WEBMAIL_PRODUCT_NAME:-Webmail}; PRODUCT_PHP=${PRODUCT//\\/\\\\}; PRODUCT_PHP=${PRODUCT_PHP//\'/\\\'}   # PHP single-quoted string
 RC_MAXMSG=$(( ${NV_MAIL_MAX_MESSAGE_MB:-25} * 3 / 4 ))   # attachments: base64 makes a message ~1/3 bigger than its files
 put $CONF/config.inc.php 640 root:nginx <<EOF
 <?php
@@ -131,7 +132,7 @@ put $CONF/config.inc.php 640 root:nginx <<EOF
 \$config['managesieve_conn_options'] = \$tls;
 
 \$config['des_key'] = '$DES';
-\$config['product_name'] = '${NV_WEBMAIL_PRODUCT_NAME:-Webmail}';
+\$config['product_name'] = '${PRODUCT_PHP}';
 \$config['support_url'] = '';
 \$config['skin'] = 'elastic';
 \$config['plugins'] = [$PLUGINS_PHP];
@@ -194,6 +195,7 @@ server {
     }
 }
 EOF
+live && { php -l $CONF/config.inc.php >/dev/null || { echo "config.inc.php has a PHP error: fix it before webmail breaks"; php -l $CONF/config.inc.php; exit 1; }; }
 nginx_apply none
 systemctl restart php-fpm
 systemctl reload nginx

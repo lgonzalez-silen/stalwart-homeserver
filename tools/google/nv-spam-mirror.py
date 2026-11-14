@@ -12,12 +12,12 @@
 # usage: nv-spam-mirror [--dry]     (--dry: report what would happen, change nothing anywhere)
 import sys, os, json, re, sqlite3, imaplib, datetime, email, email.policy, urllib.request
 
-sys.path.insert(0, "/usr/local/lib/nv"); sys.path.insert(1, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+sys.path.insert(0, "/usr/local/lib/nv"); sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))  # repo copy last
 from nvlib import jmap, upload, mid, message_ids, gmail_folders, site, ADMIN  # noqa: E402
 SITE = site()   # installed by recipe/09-ops.sh
 GROUPS = {}   # target Stalwart account -> Google sources feeding its "Google Spam" folder (google.sources[] in site.json)
 for s in SITE["google"]["sources"]:
-    if s.get("spam_mirror", True):
+    if s.get("spam_mirror", True) and s.get("enabled", True):
         GROUPS.setdefault(s["account"], {})[s["name"]] = s["user"]
 FOLDER = "Google Spam"
 STATE = "/var/lib/nv-fetch/state.db"
@@ -78,6 +78,11 @@ class Google:
         if key.startswith("gm:"): typ, d = self.m.uid("SEARCH", "X-GM-MSGID", key[3:])
         else: typ, d = self.m.uid("SEARCH", "X-GM-RAW", f'"rfc822msgid:{key} -in:trash -in:spam"')
         if typ != "OK": raise RuntimeError(f"{self.src}: All Mail search failed ({typ})")   # never read an error as "found"
+        if d and d[0]: return True
+        if key.startswith("gm:"): return False
+        # second, independent check (Gmail's X-GM-RAW search can lag): a plain IMAP header search in All Mail
+        typ, d = self.m.uid("SEARCH", "HEADER", "Message-ID", key)
+        if typ != "OK": raise RuntimeError(f"{self.src}: All Mail header search failed ({typ})")
         return bool(d and d[0])
 
 def mailbox_ids(acct):
@@ -112,13 +117,18 @@ def sync(acct, sources, c):
                 if key not in at_google:              # Google dropped it: expired, or rescued directly in Gmail?
                     if any(conn.kept_outside_spam(key) for conn in g.values()):
                         say(f"[{acct}] rescued in Gmail -> moving server copy to Inbox: {key[:40]}")
-                        if not DRY:
-                            jmap([["Email/set", {"accountId": acct, "update": {nv_id: {"mailboxIds": {role["inbox"]: True}}}}, "u"]])
+                        if not DRY:   # out of the mirror folder, into Inbox; any other folder the user added stays
+                            jmap([["Email/set", {"accountId": acct, "update": {nv_id: {f"mailboxIds/{folder}": None,
+                                                                                         f"mailboxIds/{role['inbox']}": True}}}, "u"]])
                             c.execute("update spam_mirror set status='rescued-at-google', at=? where acct=? and key=?", (now(), acct, key))
                     else:
-                        say(f"[{acct}] expired at Google -> removing from {FOLDER}: {key[:40]}")
-                        if not DRY:
-                            jmap([["Email/set", {"accountId": acct, "destroy": [nv_id]}, "d"]])
+                        others = (boxes or set()) - {folder}
+                        say(f"[{acct}] expired at Google -> removing from {FOLDER}{' (kept in its other folders)' if others else ''}: {key[:40]}")
+                        if not DRY:   # filed elsewhere too: only leave the mirror folder; otherwise it's ours to remove
+                            if others:
+                                jmap([["Email/set", {"accountId": acct, "update": {nv_id: {f"mailboxIds/{folder}": None}}}, "u"]])
+                            else:
+                                jmap([["Email/set", {"accountId": acct, "destroy": [nv_id]}, "d"]])
                             c.execute("update spam_mirror set status='expired', at=? where acct=? and key=?", (now(), acct, key))
                 continue
             if not boxes or boxes & {role.get("trash"), role.get("junk")}:
@@ -135,13 +145,13 @@ def sync(acct, sources, c):
     new = [k for k in at_google if k not in rows]
     # already on the server (forwarded, or pulled by nv-fetch, then marked spam in Gmail): leave that copy where the user
     # filed it and don't add a second one. nv-fetch records every Message-ID it saw in its done table.
-    on_nv = {r[0].strip("<> ") for r in c.execute(
+    on_nv = {mid(r[0]) for r in c.execute(
         "select key from done where src in (%s) and result in ('imported','skip-present')" % ",".join("?" * len(sources)),
         list(sources))}
-    for key in [k for k in new if k.strip("<> ") in on_nv]:
+    for key in [k for k in new if mid(k) in on_nv]:
         say(f"[{acct}] spam at Google but already on the server (not mirrored): {key[:40]}")
         if not DRY: c.execute("insert into spam_mirror values (?,?,?,?,?)", (acct, key, None, "already-on-nv", now()))
-    new = [k for k in new if k.strip("<> ") not in on_nv]
+    new = [k for k in new if mid(k) not in on_nv]
     for key in new:
         src, uid = next(iter(at_google[key].items()))
         say(f"[{acct}] new spam from {src} uid {uid} -> {FOLDER}: {key[:40]}")

@@ -10,7 +10,7 @@
     "extra_names": []
   },
   "mail": {
-    "helper_domains": ["example.com", "example.net"],
+    "helper_domains": ["example.com"],
     "mx_hosts": ["mail.example.com"],
     "max_message_mb": 25
   },

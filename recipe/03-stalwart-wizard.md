@@ -32,6 +32,6 @@ password (it changes on every bootstrap start).
   and `privateKey` = File `/etc/stalwart/tls/privkey.pem`. certbot's deploy hook refreshes those
   files and restarts Stalwart on renewal.
 - **Listeners:** keep SMTP 25, submissions 465, submission 587, IMAPS 993. **Delete** Stalwart's
-  HTTPS 443 listener (nginx owns 443). Delete POP3/POP3S; plain IMAP 143 and ManageSieve 4190 are
-  optional (firewalled anyway). HTTP listener: bind to **127.0.0.1:8080** once nginx is in front.
+  HTTPS 443 listener (nginx owns 443). Delete POP3/POP3S and plain IMAP 143. Keep ManageSieve 4190 but
+  bind it to 127.0.0.1: Roundcube's filters need it (and it's firewalled anyway). HTTP listener: bind to **127.0.0.1:8080** once nginx is in front.
 - **ACME:** make sure no ACME provider is active.
