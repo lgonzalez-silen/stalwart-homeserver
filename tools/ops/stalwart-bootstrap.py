@@ -10,12 +10,14 @@
 # Both steps sign in with a one-time recovery credential (STALWART_RECOVERY_ADMIN, which Stalwart accepts in
 # bootstrap and normal mode): a random value in a root-only file under /run, used for this run and then removed
 # (Stalwart is restarted without it). It's never printed or logged, and the admin's password or TOTP isn't needed.
-import base64, json, os, secrets, subprocess, sys, time, urllib.error, urllib.request
+import base64, json, os, secrets, signal, subprocess, sys, time, urllib.error, urllib.request
 
 HOST = sys.argv[1]
 DOMAIN = sys.argv[2] if len(sys.argv) > 2 else ""
 CONFIG = "/etc/stalwart/config.json"
 ADMIN = "/root/.secrets/stalwart-admin"
+ANSWER = "/root/.secrets/stalwart-setup-answer.json"   # Stalwart's raw answer, kept only if reading it fails
+KEYDESC = "recipes and server tools (127.0.0.1 only)"
 KEYFILE = "/root/.secrets/laptop-api.key"
 SETUP_ENV = "/run/stalwart-setup.env"
 DROPIN = "/run/systemd/system/stalwart.service.d/90-setup.conf"
@@ -50,6 +52,17 @@ def restart():
     sys.exit("Stalwart didn't answer on 127.0.0.1:8080 within a minute: see journalctl -u stalwart")
 
 
+# A run that was killed (dropped SSH session) can leave the setup credential in place, and it bypasses two-factor:
+# remove any leftover first. And turn hangup/terminate into a normal exit, so the cleanup below always runs.
+if os.path.exists(DROPIN) or os.path.exists(SETUP_ENV):
+    print("a one-time setup credential was left from an interrupted run: removing it")
+    for p in (DROPIN, SETUP_ENV):
+        if os.path.exists(p):
+            os.remove(p)
+    restart()
+for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+    signal.signal(sig, lambda *_: sys.exit("interrupted: removing the setup credential"))
+
 setup, key = not os.path.exists(CONFIG), not os.path.exists(KEYFILE)
 if not (setup or key):
     print("set up already, API key present: nothing to do")
@@ -71,9 +84,16 @@ try:
             want["defaultDomain"] = DOMAIN
         print(f"hostname {HOST}, default domain {DOMAIN or form['defaultDomain']}, certificate from certbot "
               "(no ACME), DKIM keys generated, logs without colors")
-        done = api([["x:Bootstrap/set", {"update": {"singleton": want}}, "b"]])[0][1]["updated"]["singleton"]
-        with open(ADMIN, "w") as f:
-            f.write(f"{done['username']}:{done['secret']}\n")
+        answer = api([["x:Bootstrap/set", {"update": {"singleton": want}}, "b"]])
+        with open(ANSWER, "w") as f:   # first, as is: it holds the only copy of the admin password
+            json.dump(answer, f)
+        try:
+            done = answer[0][1]["updated"]["singleton"]
+            with open(ADMIN, "w") as f:
+                f.write(f"{done['username']}:{done['secret']}\n")
+        except (KeyError, TypeError):
+            sys.exit(f"setup saved, but its answer has no admin username/password where expected: read {ANSWER}")
+        os.remove(ANSWER)
         print(f"admin account {done['username']}: its password is in {ADMIN} (root only)")
         restart()   # out of bootstrap mode (still with the setup credential, for the key)
         if not os.path.exists(CONFIG):
@@ -84,14 +104,25 @@ try:
                   if (a.get("roles") or {}).get("@type") == "Admin"]
         if not admins:
             sys.exit("no account with the Admin role found: make the API key in the WebUI (see recipe/03 header)")
-        owner = next((a for a in admins if a["name"] == "admin"), admins[0])
+        named = [a for a in admins if a["name"] == "admin"]
+        if len(named) != 1 and len(admins) != 1:
+            sys.exit("several admin accounts and none named 'admin': make the API key in the WebUI (see recipe/03 header)")
+        owner = (named or admins)[0]
+        # keys this tool made before (lost file, a restore) are revoked: nobody holds them any more
+        old = [k["id"] for k in api([["x:ApiKey/get", {"accountId": owner["id"], "ids": None,
+                                                      "properties": ["description"]}, "o"]])[0][1]["list"]
+               if k.get("description") == KEYDESC]
         made = api([["x:ApiKey/set", {"accountId": owner["id"], "create": {"k": {
-            "description": "recipes and server tools (127.0.0.1 only)",
-            "allowedIps": {"127.0.0.1": True, "::1": True}}}}, "k"]])[0][1]["created"]["k"]
+            "description": KEYDESC, "allowedIps": {"127.0.0.1": True, "::1": True}}}}, "k"]])[0][1]["created"]["k"]
         with open(KEYFILE, "w") as f:
             f.write(made["secret"] + "\n")
         print(f"API key for the recipes and tools created for {owner['name']}: {KEYFILE} (root only)")
-finally:   # the setup credential must never outlive this run
+        if old:
+            api([["x:ApiKey/set", {"accountId": owner["id"], "destroy": old}, "x"]])
+            print(f"revoked {len(old)} older key(s) made by this tool")
+finally:   # the setup credential must never outlive this run (and a second signal mustn't cut this short)
+    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, signal.SIG_IGN)
     for p in (DROPIN, SETUP_ENV):
         if os.path.exists(p):
             os.remove(p)

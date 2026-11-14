@@ -17,7 +17,7 @@
 # history for 30 days). B2's web form can't make that key ("Read and Write" includes deleteFiles); use its CLI:
 #   b2 account authorize                      (master key, on your computer)
 #   b2 key create --bucket <bucket> nv-restic listBuckets,listFiles,readFiles,writeFiles
-# This recipe checks the key's permissions every run and stops if it can delete.
+# This recipe checks the key's permissions every run and stops if it can do more than list/read/write files.
 # Secrets: /root/.secrets/restic.env (RESTIC_REPOSITORY, RESTIC_PASSWORD, B2_ACCOUNT_ID/KEY), mode 0600;
 # keep a copy in your password manager. Without RESTIC_PASSWORD the backups are unreadable.
 
@@ -201,8 +201,13 @@ if live; then
     | jq -r '.apiInfo.storageApi.capabilities // empty | join(",")')
   case ",$caps," in
     ,,) echo "couldn't read the B2 key's permissions (wrong key in restic.env, or B2 unreachable)"; exit 1 ;;
-    *,deleteFiles,*) echo "the B2 key can delete files ($caps): make one without deleteFiles (see header)"; exit 1 ;;
-    *) echo "B2 key permissions: $caps (no delete: good)" ;;
+    *) # only list/read permissions plus writeFiles: anything else (deleteFiles, writeBuckets = lifecycle rules,
+       # retention, bypassGovernance, ...) lets whoever holds the key destroy the history
+       extra=$(tr ',' '\n' <<<"$caps" | grep -vxE 'writeFiles|list[A-Za-z]*|read[A-Za-z]*' | paste -sd, -)
+       if [ -n "$extra" ]; then
+         echo "the B2 key can do more than list/read/write files ($extra): make a new one (see header)"; exit 1
+       fi
+       echo "B2 key permissions: $caps (can't delete or change the bucket: good)" ;;
   esac
   restic cat config >/dev/null 2>&1 || restic init
 fi

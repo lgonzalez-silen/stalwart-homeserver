@@ -38,6 +38,8 @@ certs = api([["x:Certificate/get", {"ids": None, "properties": ["certificate"]},
 if not any((c.get("certificate") or {}).get("filePath") == CERT for c in certs):
     change(f"TLS certificate from {CERT} (certbot)", ["x:Certificate/set", {"create": {"n": {
         "certificate": {"@type": "File", "filePath": CERT}, "privateKey": {"@type": "File", "filePath": PKEY}}}}, "c"])
+    if not CUT and not SHOW:
+        print("  Stalwart uses it from its next restart: systemctl restart stalwart (~2 s), or wait for the nightly backup")
 
 ls = {l["name"]: l for l in api([["x:NetworkListener/get", {"ids": None}, "l"]])[0][1]["list"]}
 by_port = lambda port: [l for l in ls.values() if any(b.endswith(f":{port}") for b in l.get("bind") or {})]

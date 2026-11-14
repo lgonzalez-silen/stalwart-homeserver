@@ -14,7 +14,10 @@ handle it.
   temporary password); the answer carries the new admin account's generated password. The same credential works in
   normal mode, which is how recipe 03 makes the API key (`x:ApiKey/set` with the admin's `accountId`; the recovery
   login itself is a virtual account and can't own one). Remove it afterwards: it bypasses two-factor.
-- **The admin account should have TOTP**, and then password login for scripts stops working. Scripts use an API key
+- **The admin account should have TOTP**, and then password login for scripts stops working (HTTP 402; in 1.1.0
+  password+code over Basic auth isn't accepted either, tested). API keys keep working, which is why everything here
+  uses one. TOTP can also be set through the API (`x:AccountPassword/set` with `currentSecret` and
+  `otpAuth.otpUrl` + a current `otpCode`); the guide does it in the WebUI because you scan the code anyway. Scripts use an API key
   limited to 127.0.0.1/::1 instead (`/root/.secrets/laptop-api.key`, recipe 05 header).
 - **Some settings apply only at the next restart** (the DMARC/TLS report settings, for example). The nightly backup
   restarts Stalwart (~2 s), so "tomorrow" is the usual answer.
