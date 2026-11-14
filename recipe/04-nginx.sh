@@ -6,12 +6,9 @@
 # web console: the admin API itself is the JMAP endpoint every mail app uses, so it can't be IP-limited here. What
 # protects admin is TOTP on the admin account and an API key limited to 127.0.0.1/::1 (recipe/07).
 #
-# Order of the cutover (first build):
-#   1. Run this script (installs + validates config, does NOT start nginx while Stalwart has 443)
-#   2. Stalwart WebUI: clientIpSource=X-Forwarded-For; auto-ban exemptions 127.0.0.1, ::1 AND the server's own
-#      public IPv4/IPv6 (webmail's SMTP comes from them); listeners: +587, HTTP -> 127.0.0.1:8080, delete 443/995,
-#      keep 4190 bound to 127.0.0.1 (Roundcube's filters)  (see 03-stalwart-wizard.md)
-#   3. systemctl restart stalwart && systemctl enable --now nginx
+# First build: run this (nginx installed + tested, NOT started while Stalwart has 443), then
+# recipe/07-stalwart-settings.sh: it moves Stalwart's HTTP to 127.0.0.1:8080, sets X-Forwarded-For, removes Stalwart's
+# 443 listener, restarts Stalwart and starts nginx, then checks the admin console through nginx.
 #
 # Constraints from Stalwart 1.0 docs:
 # - Web admin/OAuth login only works on the public URL (https://<server.hostname>), served at the
@@ -61,7 +58,7 @@ client_max_body_size 100m;   # JMAP uploads / attachments
 limit_req_status 429;
 # The server's own addresses are exempt from the per-IP limit (bulk JMAP uploads by Vandelay
 # running on the server reach nginx from its public IP). An empty key means "not limited".
-geo \$self_ip { default 0; 127.0.0.0/8 1; ::1/128 1; $NV_SERVER_IPV4/32 1; $NV_SERVER_IPV6/128 1; }
+geo \$self_ip { default 0; 127.0.0.0/8 1; ::1/128 1; $NV_SERVER_IPV4/32 1;${NV_SERVER_IPV6:+ $NV_SERVER_IPV6/128 1;} }
 map \$self_ip \$perip_key { 1 ""; default \$binary_remote_addr; }
 limit_req_zone \$perip_key zone=perip:10m rate=20r/s;
 map \$request_method \$auth_post_key { POST \$binary_remote_addr; default ""; }

@@ -118,7 +118,7 @@ echo "== site settings for the tools: /etc/nv/site.json (the tools read their ac
 install -d -m 700 /etc/nv
 printf '%s' "$NV_SITE_JSON" | put /etc/nv/site.json 600
 
-echo "== ops tools: Junk watch (daily; mails only on a spike), nv-set-password"
+echo "== ops tools: Junk report (daily prune; spikes on the dashboard), nv-set-password, nv-status (dashboard)"
 install -d -m 755 /usr/local/lib/nv
 repo_file tools/lib/nvlib.py | put /usr/local/lib/nv/nvlib.py 644   # shared by the tools here and in recipe/11
 repo_file tools/ops/nv-junk-report.py | put /usr/local/sbin/nv-junk-report 700

@@ -89,9 +89,10 @@ Order matters. Each recipe's header says what it needs and what to check afterwa
    certificate. Copy [`dns/dnsconfig.example.js`](dns/dnsconfig.example.js) and fill in your values; the rest of the
    mail records (MX, SPF, DKIM, ...) come in step 6.
 3. `cp site.example.json site.json` and fill it in (reference below).
-4. `./nv run recipe/01-base.sh` (reboot if it says so), then `02-certs.sh`, `03-stalwart.sh`, Stalwart's setup
-   wizard as described in [`recipe/03-stalwart-wizard.md`](recipe/03-stalwart-wizard.md), then `04-nginx.sh`,
-   `05-mail-domain-certs.sh`, `06-roundcube.sh`, `07-stalwart-settings.sh`.
+4. In this order: `./nv run recipe/01-base.sh` (reboot if it says so), `02-certs.sh`, `03-stalwart.sh`, then
+   Stalwart's setup wizard and its few manual steps ([`recipe/03-stalwart-wizard.md`](recipe/03-stalwart-wizard.md)),
+   then `04-nginx.sh` (installs nginx, doesn't start it), `07-stalwart-settings.sh` (settings, and the switch of
+   port 443 from Stalwart to nginx), `05-mail-domain-certs.sh`, `06-roundcube.sh`.
 5. Backups and operations: `08-backup.sh` (create the B2 bucket and key first, see its header), then `09-ops.sh`.
    **Test a restore** ([`docs/restore.md`](docs/restore.md)) before you move real mail in.
 6. **Mail DNS** for each domain: MX, SPF, DKIM (values from Stalwart's WebUI), DMARC, MTA-STS and TLS-RPT TXT

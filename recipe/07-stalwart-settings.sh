@@ -5,6 +5,8 @@
 # /root/.secrets/laptop-api.key (an admin API key restricted to 127.0.0.1/::1; create it in the WebUI and store it
 # there, mode 0600). Password auth stops working once the admin account has TOTP, hence the key.
 # In render mode the JSON it would send goes to <dir>/jmap.log.
+# Also (tools/ops/stalwart-network.py): listeners, allowed IPs, log format, and on a first build the cutover from
+# Stalwart's own 443 to nginx (see recipe/04's header). NV_SHOW=1 prints what it would change.
 # Settings: mail.mx_hosts (every MX name your domains use; listed in the MTA-STS policy).
 #           mail.max_message_mb (largest message accepted, default 25 like Gmail; Stalwart's default is 100).
 #           Large files belong in shared links: on a personal server every big message is a real share of the disk.
@@ -67,6 +69,32 @@ if [ "${NV_SHOW:-}" != 1 ]; then
     rm -f /tmp/nv-07.$$
     [ "$bad" = 0 ] || { echo "Stalwart REJECTED $bad of the settings above: nothing else is wrong, but fix these"; exit 1; }
   fi
+fi
+
+echo "== listeners, allowed IPs, log format (+ the cutover to nginx, on a first build)"
+# The cutover hands 443 from Stalwart to nginx. It runs only while nginx isn't running yet (first build, after
+# recipe/04 has installed and tested it): http -> 127.0.0.1:8080, X-Forwarded-For, Stalwart's 443 removed, restart,
+# nginx started, then the admin console is checked through nginx. On a running server none of that happens.
+CUT=no
+if live && ! systemctl is-active --quiet nginx; then
+  [ -f /etc/nginx/conf.d/10-$NV_SERVER_HOSTNAME.conf ] || { echo "run recipe/04-nginx.sh first (installs nginx)"; exit 1; }
+  CUT=yes
+fi
+if live; then
+  repo_file tools/ops/stalwart-network.py | python3 - "$CUT" "${NV_SHOW:-}" || exit 1
+fi
+if [ "$CUT" = yes ] && [ "${NV_SHOW:-}" != 1 ]; then
+  echo "== cutover: restart Stalwart (listener changes apply now), start nginx"
+  systemctl restart stalwart
+  for i in $(seq 30); do ss -tlnH | grep -q '127.0.0.1:8080 ' && break; sleep 1; done
+  systemctl enable --now nginx
+  # through the public address, like any visitor (via 127.0.0.1 Stalwart rejects the forwarded 127.0.0.1 with a 400)
+  code=$(curl -s -o /dev/null -w '%{http_code}' --resolve $NV_SERVER_HOSTNAME:443:$NV_SERVER_IPV4 https://$NV_SERVER_HOSTNAME/admin)
+  case $code in
+    200|302) echo "admin console through nginx: HTTP $code (OK): sign in at https://$NV_SERVER_HOSTNAME/admin" ;;
+    *) echo "admin console through nginx answered HTTP $code: check 'systemctl status nginx stalwart' (Stalwart keeps"
+       echo "running; mail is unaffected)"; exit 1 ;;
+  esac
 fi
 
 J '{"using":["urn:ietf:params:jmap:core"],"methodCalls":[

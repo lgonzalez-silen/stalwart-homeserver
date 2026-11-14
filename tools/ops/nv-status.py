@@ -116,15 +116,24 @@ def check_os():
 def check_backup():
     res, at = unit_result("nv-backup.service")
     age = hours_since(at)
-    if res != "success":
+    if at is None:   # never ran yet (a new server): not an alarm until the timer has had two nights
+        _, since = run("systemctl", "show", "nv-backup.timer", "-p", "ActiveEnterTimestamp", "--value")
+        try:
+            t = datetime.datetime.strptime(" ".join(since.split()[1:3]), "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+        except (ValueError, IndexError):
+            t = None
+        waited = hours_since(t)
+        state = "crit" if waited is not None and waited > 48 else "warn"
+        summary = "no backup has run yet" + ("" if state == "crit" else " (the first one runs tonight, 03:15 UTC)")
+    elif res != "success":
         state, summary = "crit", f"last run FAILED ({res}): journalctl -u nv-backup -n 50"
     else:
-        state = "crit" if age is None or age > 48 else "warn" if age > 30 else "ok"
-        summary = f"last good backup {age:.0f} h ago" if age is not None else "no run recorded yet"
+        state = "crit" if age > 48 else "warn" if age > 30 else "ok"
+        summary = f"last good backup {age:.0f} h ago"
     add("backup", "backups", "Nightly backup", state, summary, round(age, 1) if age is not None else None, "h", critical=True)
-    res2, at2 = unit_result("nv-backup-check.service")
-    add("backup-check", "backups", "Monthly backup check", "ok" if res2 in ("success", "") else "warn",
-        f"last check: {res2 or 'not run yet'}" + (f", {at2:%Y-%m-%d}" if at2 else ""))
+    res2, at2 = unit_result("nv-backup-check.service")   # a unit that never ran reports "success": use the timestamp
+    add("backup-check", "backups", "Monthly backup check", "warn" if at2 and res2 != "success" else "ok",
+        (f"last check: {res2}, {at2:%Y-%m-%d}" if at2 else "not run yet (1st of the month)"))
 
 
 @guard
@@ -164,8 +173,8 @@ def check_google():
             critical=True)
     for unit, title in (("nv-spam-mirror.service", "Spam mirror"), ("nv-google-trim.service", "Trim")):
         res, at = unit_result(unit)
-        add(unit.split(".")[0], "google", title, "ok" if res in ("success", "") else "warn",
-            f"last run: {res or 'not run yet'}" + (f", {at:%Y-%m-%d %H:%M} UTC" if at else ""))
+        add(unit.split(".")[0], "google", title, "warn" if at and res != "success" else "ok",
+            (f"last run: {res}, {at:%Y-%m-%d %H:%M} UTC" if at else "not run yet"))
     if c.execute("select 1 from sqlite_master where name='spam_mirror'").fetchone():
         n = c.execute("select count(*) from spam_mirror where status='skipped' and at>?", (week,)).fetchone()[0]
         if n:
@@ -233,7 +242,8 @@ def main():
             subject = f"{'ATTENTION' if bad else 'recovered'}: {k['title']}"
             body = f"{k['title']}: {k['summary']}\n\nAll checks: ./nv status (on your computer)\n"
             subprocess.run(["/usr/local/sbin/nv-alert", subject], input=body.encode())
-        db.execute("insert or replace into alerted values (?,?,?)", (k["id"], "crit" if bad else "ok", ts))
+        if not PRINT:   # a --print run looks only; it must not mark anything as already alerted
+            db.execute("insert or replace into alerted values (?,?,?)", (k["id"], "crit" if bad else "ok", ts))
     db.commit()
     order = {"crit": 0, "warn": 1, "ok": 2}
     out = {"generated": ts, "host": SITE["server"]["hostname"],

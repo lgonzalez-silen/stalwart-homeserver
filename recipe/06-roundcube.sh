@@ -205,5 +205,8 @@ systemctl restart php-fpm
 systemctl reload nginx
 
 echo "== checks"
-curl -s -o /dev/null -w "login page via nginx: %{http_code}\n" --resolve $HOST:443:127.0.0.1 https://$HOST/
+# nginx was just reloaded: give its new workers a moment (a request during the switch can be dropped)
+for i in 1 2 3 4 5; do code=$(curl -s -o /dev/null -w "%{http_code}" --resolve $HOST:443:127.0.0.1 https://$HOST/ || true)
+  [ "$code" = 200 ] && break; sleep 1; done
+echo "login page via nginx: $code"; [ "$code" = 200 ] || { echo "webmail is not answering: systemctl status nginx php-fpm"; exit 1; }
 sudo -u nginx sqlite3 $DATA/roundcube.db 'PRAGMA journal_mode;' | sed 's/^/sqlite journal_mode: /'
