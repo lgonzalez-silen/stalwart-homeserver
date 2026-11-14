@@ -37,11 +37,12 @@ for acct, name in ACCOUNTS.items():
         junk = [m["id"] for m in mb if m.get("role") == "junk"] or [m["id"] for m in mb if m["name"].lower() in ("junk", "junk mail")]
         if not junk:
             lines.append(f"{name:8} (no Junk folder)"); continue
-        r = jmap([["Email/query", {"accountId": acct, "filter": {"inMailbox": junk[0], "after": iso(since8)},
-                                   "sort": [{"property": "receivedAt", "isAscending": False}], "limit": 5000}, "q"],
-                  ["Email/get", {"accountId": acct, "#ids": {"resultOf": "q", "name": "Email/query", "path": "/ids"},
-                                 "properties": ["receivedAt", "from", "subject", "header:X-Spam-Score:asText"]}, "g"]])
-        msgs = r[1][1]["list"]
+        ids = jmap([["Email/query", {"accountId": acct, "filter": {"inMailbox": junk[0], "after": iso(since8)},
+                                     "sort": [{"property": "receivedAt", "isAscending": False}], "limit": 5000}, "q"]])[0][1]["ids"]
+        msgs = []
+        for i in range(0, len(ids), 500):   # Stalwart answers at most 500 objects per get/set (maxObjectsInGet/Set)
+            msgs += jmap([["Email/get", {"accountId": acct, "ids": ids[i:i+500],
+                                         "properties": ["receivedAt", "from", "subject", "header:X-Spam-Score:asText"]}, "g"]])[0][1]["list"]
     except Exception as e:
         lines.append(f"{name:8} ERROR {e}"); spikes.append(f"{name} (report error)"); continue
     t = lambda m: datetime.datetime.fromisoformat(m["receivedAt"].replace("Z", "+00:00"))
@@ -63,7 +64,8 @@ for acct, name in ACCOUNTS.items():
         old = jmap([["Email/query", {"accountId": acct, "filter": {"inMailbox": junk[0],
                      "before": iso(now - datetime.timedelta(days=KEEP_DAYS))}, "limit": 5000}, "o"]])[0][1]["ids"]
         if old and not (DRY or SHOW):
-            jmap([["Email/set", {"accountId": acct, "destroy": old}, "d"]])
+            for i in range(0, len(old), 500):
+                jmap([["Email/set", {"accountId": acct, "destroy": old[i:i+500]}, "d"]])
             detail.append(f"  ({len(old)} older than {KEEP_DAYS} days deleted)")
 
 if DRY:

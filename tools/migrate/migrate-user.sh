@@ -30,6 +30,9 @@ grep -E "^email:" "$W/import.log" | tail -1 || true
 vandelay export --url "https://$HOST" --auth-basic "$login" --account-id "$acct" "$W/archive.sqlite" > "$W/export.log" 2>&1 || { tail -20 "$W/export.log"; exit 1; }
 grep -iE "^(mailbox|email):|error|warn" "$W/export.log" | tail -5 || true
 echo "(full logs: $W/import.log, $W/export.log)"
-python3 -I "$HERE/vandelay-fix-folders.py" "$login" "$acct" "$W/archive.sqlite" "$PWF"
+FIXP=(); [ -n "$prefix" ] && FIXP=(--prefix "$prefix")
+python3 -I "$HERE/vandelay-fix-folders.py" "$login" "$acct" "$W/archive.sqlite" "$PWF" "${FIXP[@]}" --dry-run
+read -rp "add those folder memberships? Type yes: " ok; [ "$ok" = yes ] && \
+  python3 -I "$HERE/vandelay-fix-folders.py" "$login" "$acct" "$W/archive.sqlite" "$PWF" "${FIXP[@]}"
 python3 -I "$HERE/cmpacct.py" "$acct" "$W/maildir/manifest.tsv" ${prefix:+--only-manifest}
 rm -rf "$W/maildir"; echo "archive kept: $W/archive.sqlite (delete when you're happy with the result)"

@@ -90,10 +90,16 @@ echo "stalwart snapshot: $(echo "$(date +%s.%N) - $t0" | bc) s of downtime"
 sqlite3 /var/lib/roundcube/roundcube.db ".backup /var/backups/nv/roundcube.db"
 # the Google module's state (where each pull stopped, what was mirrored/trimmed): without it a restored server
 # would start pulling "from now" and skip mail that arrived after the backup
-EXTRA=(); [ -f /var/lib/nv-fetch/state.db ] && sqlite3 /var/lib/nv-fetch/state.db ".backup /var/backups/nv/nv-fetch-state.db" \
-  && EXTRA=(/var/backups/nv/nv-fetch-state.db)
+EXTRA=(); STATE_FAILED=
+if [ -f /var/lib/nv-fetch/state.db ]; then
+  if sqlite3 /var/lib/nv-fetch/state.db ".timeout 30000" ".backup /var/backups/nv/nv-fetch-state.db"; then
+    EXTRA=(/var/backups/nv/nv-fetch-state.db)
+  else STATE_FAILED=1; fi
+fi
 restic backup --host nv --tag nightly --no-scan "$SNAP" /var/backups/nv/roundcube.db "${EXTRA[@]}"
 rm -rf "$SNAP"
+# everything else is backed up; fail the run (-> alert) so a missing Google state never goes unnoticed
+[ -z "$STATE_FAILED" ] || { echo "could not copy /var/lib/nv-fetch/state.db: tonight's backup lacks the Google state"; exit 1; }
 if [ "$(date +%u)" = 7 ] || [ "${1:-}" = --prune ]; then
   restic forget --host nv --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
 fi

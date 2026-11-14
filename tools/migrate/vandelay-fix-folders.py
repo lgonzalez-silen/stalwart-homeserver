@@ -1,9 +1,12 @@
-# vandelay-fix-folders.py <login> <account-id> <archive.sqlite> <password-file> [--dry-run]   (run on the server)
+# vandelay-fix-folders.py <login> <account-id> <archive.sqlite> <password-file> [--prefix <folder>] [--dry-run]
+# (run on the server). --prefix: the mailbox was imported under that folder (migrate-user.sh with a prefix): archive
+# folders are then matched by their path under it, never by role, so nothing lands in the account's own Inbox/Sent.
 # Vandelay de-duplicates by Message-ID, so a message that sat in two folders on the old server lands in only one.
 # This reads the archive's folder placements and adds the missing folder memberships in Stalwart (no copies made).
 import json, sqlite3, urllib.request, base64, collections, sys
 ACCT_USER, ACCT, DB = sys.argv[1], sys.argv[2], sys.argv[3]
 DRY = "--dry-run" in sys.argv
+PREFIX = sys.argv[sys.argv.index("--prefix") + 1].strip("/") if "--prefix" in sys.argv else ""
 PW=open(sys.argv[4]).read().strip()
 AUTH="Basic "+base64.b64encode(f"{ACCT_USER}:{PW}".encode()).decode()
 def jmap(calls):
@@ -33,7 +36,7 @@ db=sqlite3.connect(DB)
 amb={r[0]:r for r in db.execute("select id,name,parent_id,role from mailboxes")}
 def ap(i):
     r=amb[i]
-    if r[3] and r[3] in role2path: return role2path[r[3]]
+    if r[3] and r[3] in role2path and not PREFIX: return role2path[r[3]]   # with a prefix: by path only
     s=[r[1]]
     while r[2]: r=amb[r[2]]; s.append(r[1])
     return norm("/".join(reversed(s)))

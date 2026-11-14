@@ -96,6 +96,10 @@ def mailbox_ids(acct):
 
 def sync(acct, sources, c):
     folder, role = mailbox_ids(acct)
+    # Mirror rows don't record their source. If any of this account's Google sources is paused (enabled: false or
+    # spam_mirror: false), its spam isn't looked at, so "no longer at Google" can't be told apart from "not checked":
+    # skip the expire/rescue step for the account (copies stay put) rather than delete anything.
+    paused = [s["name"] for s in SITE["google"]["sources"] if s["account"] == acct and s["name"] not in sources]
     g = {src: Google(src, user) for src, user in sources.items()}
     at_google = {}                                   # key -> {src: uid}
     for src, conn in g.items():
@@ -105,7 +109,9 @@ def sync(acct, sources, c):
     mirrored = {k: v[0] for k, v in rows.items() if v[1] == "mirrored"}
 
     # 1. what happened on the server to what we mirrored?
-    if mirrored:
+    if mirrored and paused:
+        say(f"[{acct}] {', '.join(paused)} paused: not expiring or rescuing mirrored copies this run")
+    if mirrored and not paused:
         found = {}
         ids = list(mirrored.values())
         for i in range(0, len(ids), 500):

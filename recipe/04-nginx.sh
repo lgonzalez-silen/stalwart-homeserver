@@ -8,8 +8,9 @@
 #
 # Order of the cutover (first build):
 #   1. Run this script (installs + validates config, does NOT start nginx while Stalwart has 443)
-#   2. Stalwart WebUI: clientIpSource=X-Forwarded-For, auto-ban exemption 127.0.0.1/::1,
-#      listeners: +587, HTTP -> 127.0.0.1:8080, delete 443/995/4190  (see 03-stalwart-wizard.md)
+#   2. Stalwart WebUI: clientIpSource=X-Forwarded-For; auto-ban exemptions 127.0.0.1, ::1 AND the server's own
+#      public IPv4/IPv6 (webmail's SMTP comes from them); listeners: +587, HTTP -> 127.0.0.1:8080, delete 443/995,
+#      keep 4190 bound to 127.0.0.1 (Roundcube's filters)  (see 03-stalwart-wizard.md)
 #   3. systemctl restart stalwart && systemctl enable --now nginx
 #
 # Constraints from Stalwart 1.0 docs:

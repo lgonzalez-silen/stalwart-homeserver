@@ -15,7 +15,8 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
 ## Whole server
 
 1. A fresh AlmaLinux 10 on the VPS (keep the same IP if you can: it keeps your reverse DNS and reputation), then run
-   recipes 01 to 07 as for a first build, including Stalwart's setup wizard: it writes `/etc/stalwart/config.json`
+   recipes 01 to 07 as for a first build (and 09, 10, 11 if you use them: the Google module must be installed
+   before its state is put back in step 4), including Stalwart's setup wizard: it writes `/etc/stalwart/config.json`
    (where the data lives), which isn't in the backup. Everything you set up after the wizard comes back with the data,
    except one thing: the API key the tools use (see step 5).
 2. Stop the services that use the data: `ssh root@<server> 'systemctl stop stalwart php-fpm'`
@@ -30,9 +31,11 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
    mv /var/lib/stalwart /var/lib/stalwart-empty
    mv /var/tmp/r/var/lib/stalwart-snap /var/lib/stalwart && chown -R stalwart:stalwart /var/lib/stalwart
    install -o nginx -g nginx -m 640 /var/tmp/r/var/backups/nv/roundcube.db /var/lib/roundcube/roundcube.db
-   # Google module only: where each pull stopped, so mail since the backup is still fetched
-   [ -f /var/tmp/r/var/backups/nv/nv-fetch-state.db ] && systemctl stop nv-fetch nv-spam-mirror.timer && \
-     install -m 600 /var/tmp/r/var/backups/nv/nv-fetch-state.db /var/lib/nv-fetch/state.db
+   # Google module only: where each pull stopped, so mail since the backup is still fetched.
+   # (recipe 11 must have run first; if this says "not found", run it, then repeat these three lines)
+   systemctl stop nv-fetch nv-spam-mirror.timer nv-google-trim.timer
+   install -m 600 /var/tmp/r/var/backups/nv/nv-fetch-state.db /var/lib/nv-fetch/state.db
+   ls -l /var/lib/nv-fetch/state.db
    restorecon -R /var/lib/stalwart /var/lib/roundcube
    systemctl start stalwart php-fpm
    ```
@@ -47,7 +50,7 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
      one in the WebUI (allowed IPs 127.0.0.1, ::1) and write it to that file (mode 0600). Until then the tools fail.
    - SSH host keys are new: on your computer, `ssh-keygen -R <server>` and accept the new fingerprint once.
 6. Check: log in to webmail, send and receive a test message, open a few old folders, and
-   `systemctl list-timers 'nv-backup*'`, and (Google module) `systemctl start nv-fetch nv-spam-mirror.timer`. Delete `/var/lib/stalwart-empty` and `/var/tmp/r` when you're happy.
+   `systemctl list-timers 'nv-backup*'`, and (Google module) `systemctl start nv-fetch nv-spam-mirror.timer nv-google-trim.timer`. Delete `/var/lib/stalwart-empty` and `/var/tmp/r` when you're happy.
 
 ## One mailbox, or a few messages
 

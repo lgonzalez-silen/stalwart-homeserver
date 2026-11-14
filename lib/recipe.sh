@@ -24,7 +24,18 @@ else
   run() { "$@"; }
   live() { return 0; }
   # nginx files changed this run, kept in a file (not an array: put may run in a pipe, i.e. a subshell)
-  _NGINX_PUT=$(mktemp /run/nv-nginx-put.XXXXXX); trap 'rm -f "$_NGINX_PUT"' EXIT
+  _NGINX_PUT=$(mktemp /run/nv-nginx-put.XXXXXX)
+  _nginx_on_exit() {   # the recipe stopped after changing nginx files but before nginx_apply tested them: put them back
+    local p
+    if [ -s "$_NGINX_PUT" ]; then
+      while IFS= read -r p; do
+        if [ -e "$p.nv-prev" ]; then mv -f "$p.nv-prev" "$p"; elif [ -e "$p.nv-new" ]; then rm -f "$p" "$p.nv-new"; fi
+      done < <(sort -u "$_NGINX_PUT")
+      echo "recipe stopped before its nginx changes were tested: they were undone" >&2
+    fi
+    rm -f "$_NGINX_PUT"
+  }
+  trap _nginx_on_exit EXIT
   nginx_track() {  # nginx_track <file>: back up a file before changing it, so nginx_apply can put it back.
                    # An older backup left by an interrupted run is kept: it is the last version that passed the test.
                    # A file that doesn't exist yet gets a .nv-new marker, so the rollback knows it may remove it.

@@ -101,6 +101,9 @@ for spec in files:
         tid = cands[0]
     else:
         tid = votes.most_common(1)[0][0] if votes else None
+        if tid and mboxes[tid].get("role") in ("trash", "junk"):   # never pick a folder that gets emptied by a vote
+            print("%s: most copies are in %s; give the target folder explicitly as %s=<folder/path>" % (fpath, path(mboxes[tid]), fpath))
+            tid = None
     others = sum(v for k, v in votes.items() if k != tid)
     print("%-40s %6d msgs | new %4d | no Message-ID %d (%s) | deleted %d | placeholders %d | -> %s | elsewhere: %d"
           % (fpath, n, len(new), noid, "included" if no_id else "skipped", dele, ph, path(mboxes[tid]) if tid else "?", others))

@@ -198,19 +198,25 @@ class Source:
         if typ != "OK": raise RuntimeError(f"UID SEARCH failed ({typ})")
         uids = sorted(u for u in map(int, d[0].split()) if u > last) if d and d[0] else []
         labels = {}
-        for i in range(0, len(uids), 500):
-            typ, d = self.imap.uid("FETCH", ",".join(map(str, uids[i:i+500])), "(X-GM-LABELS FLAGS)")
-            if typ != "OK": raise RuntimeError(f"label FETCH failed ({typ})")
-            for line in d:
+        def read(reply):
+            for line in reply:
                 line = line.decode(errors="replace") if isinstance(line, bytes) else (line[0].decode(errors="replace") if isinstance(line, tuple) else "")
                 u = re.search(r"UID (\d+)", line)
                 if not u: continue
                 lab = re.search(r"X-GM-LABELS \((.*?)\)(?: |\)|$)", line); fl = re.search(r"FLAGS \((.*?)\)", line)
                 names = [q.replace("\\\\", "\\") or w for q, w in re.findall(r'"((?:[^"\\]|\\.)*)"|(\S+)', lab.group(1))] if lab else []
                 labels[int(u.group(1))] = (names, fl.group(1) if fl else "")
+        for i in range(0, len(uids), 500):
+            typ, d = self.imap.uid("FETCH", ",".join(map(str, uids[i:i+500])), "(X-GM-LABELS FLAGS)")
+            if typ != "OK": raise RuntimeError(f"label FETCH failed ({typ})")
+            read(d)
         todo, decided = [], last
         for u in uids:
-            if u not in labels: break
+            if u not in labels:   # its labels didn't come back in the batch: ask for that one message alone
+                typ, d = self.imap.uid("FETCH", str(u), "(X-GM-LABELS FLAGS)")
+                if typ == "OK": read(d)
+            if u not in labels:   # still nothing: an error (counted, alerted after ~10), never a silent stop
+                raise RuntimeError(f"no labels for uid {u} in Gmail's reply; can't decide it, not moving past it")
             names, fl = labels[u]
             if not ("\\Draft" in fl or "\\Draft" in names or any("chat" in x.lower() for x in names)) \
                     and ("\\Inbox" in names or "\\Sent" not in names):

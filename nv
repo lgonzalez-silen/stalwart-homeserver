@@ -87,16 +87,24 @@ SECRET = re.compile(rb"<secret:[A-Za-z0-9_.-]+>")
 def hide_secrets(theirs, mine):
     """A render line holding a placeholder like <secret:des_key> stands for a secret that only the server has.
     Where a server line matches that line with the secret filled in, swap in the render line, so the secret is
-    never printed and the line counts as equal. Any other line holding a secret-looking value stays as it is."""
-    out = theirs
+    never printed and the line counts as equal. If a placeholder line has no exact match (the line changed shape),
+    every server line naming that setting is hidden and the caller is told not to print a diff for the file."""
+    out, unsafe = theirs, False
     for line in mine.splitlines():
         if SECRET.search(line):
             parts = [re.escape(x) for x in SECRET.split(line)]
             pat = re.compile(rb"^" + rb"[^\n]+".join(parts) + rb"$", re.M)
             out = pat.sub(lambda m: line, out)
             if not pat.search(out) and line not in out:
-                print("note: a line with a secret placeholder had no match on the server (not shown)")
-    return out
+                # No exact match: the line changed shape. Hide every server line that starts like it (e.g. the
+                # "$config['des_key'] =" part), so the diff can show THAT it differs but never the secret itself.
+                # the setting's name: the longest identifier before the placeholder (des_key in $config['des_key'])
+                names = re.findall(rb"[A-Za-z_][A-Za-z0-9_]{2,}", SECRET.split(line)[0])
+                name = max(names, key=len) if names else re.sub(rb"[<>]", b"", SECRET.search(line).group(0)).split(b":")[-1]
+                hp = re.compile(rb"^[^\n]*" + re.escape(name) + rb"[^\n]*$", re.M)
+                out = hp.sub(b"<line hidden: holds a secret, and differs from the render>", out)
+                unsafe = True
+    return out, unsafe
 
 
 def diff(env, out):
@@ -126,11 +134,14 @@ def diff(env, out):
             print(f"MISSING on server: {p}"); continue
         if live[p] != want[p]:
             print(f"MODE/OWNER {p}: render {' '.join(want[p])}, server {' '.join(live[p])}")
-        theirs = hide_secrets(files.get(p, b""), mine)
+        theirs, unsafe = hide_secrets(files.get(p, b""), mine)
         if theirs == mine:
             same += live[p] == want[p]
             continue
         print(f"CONTENT {p}:")
+        if unsafe:   # a secret's line changed shape: a line-by-line diff could show the secret, so don't print one
+            print("  differs, and a line holding a secret doesn't match the render: diff not shown. Compare on the server.")
+            continue
         sys.stdout.writelines(difflib.unified_diff(theirs.decode(errors="replace").splitlines(True),
                                                    mine.decode(errors="replace").splitlines(True), "server", "render"))
     print(f"{same} of {len(paths)} files identical (content, mode, owner)")
