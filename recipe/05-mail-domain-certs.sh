@@ -19,7 +19,7 @@ echo "== ACME webroot on port 80 (before the https redirect)"
 mkdir -p $WEBROOT/.well-known/acme-challenge
 restorecon -R $WEBROOT 2>/dev/null || true
 C10=/etc/nginx/conf.d/10-$NV_SERVER_HOSTNAME.conf
-live && { cp -p "$C10" "$C10.nv-prev"; echo "$C10" >> "$_NGINX_PUT"; }   # edited below, not via put: restorable too
+nginx_track "$C10"   # edited below, not via put: restorable too
 NGINX_CONF=$C10 python3 - <<'PY'
 import os, pathlib, re
 p = pathlib.Path(os.environ['NGINX_CONF']); s = p.read_text()

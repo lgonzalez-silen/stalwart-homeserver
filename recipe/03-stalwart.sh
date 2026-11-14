@@ -32,11 +32,11 @@ mkdir -p /root/installs && { live && cd /root/installs; }
 # The installer runs as root, so it is pinned: if Stalwart changes it, the recipe stops. Read the new script, then
 # set NV_STALWART_INSTALLER_SHA256=<new hash> for that run (and update the pin here).
 PIN=${NV_STALWART_INSTALLER_SHA256:-aba687be5a0c1e3fe966183ade4a6098454d4c3b0b2f1d7bec534c8eb69cf4a4}   # 2026-11-14
-curl --proto '=https' --tlsv1.2 -sSf https://get.stalw.art/install.sh -o stalwart-install.sh
-if live && ! echo "$PIN  stalwart-install.sh" | sha256sum -c --quiet; then
-  echo "stalwart-install.sh changed (sha256 $(sha256sum stalwart-install.sh | cut -c1-64)): review it before trusting it"; exit 1
-fi
-if ! command -v stalwart >/dev/null; then
+if ! command -v stalwart >/dev/null; then   # only checked when it would actually run
+  curl --proto '=https' --tlsv1.2 -sSf https://get.stalw.art/install.sh -o stalwart-install.sh
+  if live && ! echo "$PIN  stalwart-install.sh" | sha256sum -c --quiet; then
+    echo "stalwart-install.sh changed (sha256 $(sha256sum stalwart-install.sh | cut -c1-64)): review it before trusting it"; exit 1
+  fi
   sh stalwart-install.sh
 fi
 stalwart --version || true

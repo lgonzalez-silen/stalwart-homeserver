@@ -13,7 +13,7 @@
 # usage: nv-fetch                 run all enabled sources forever (systemd service)
 #        nv-fetch --once [src]    one pass and exit (testing)
 #        nv-fetch --status        show watermarks and counts
-import sys, os, json, time, sqlite3, imaplib, re, email, email.policy, datetime, threading, subprocess, urllib.request, traceback
+import sys, os, json, time, sqlite3, imaplib, re, email, email.policy, datetime, threading, subprocess, urllib.request, urllib.error, traceback
 
 SITE = json.load(open(os.environ.get("NV_SITE", "/etc/nv/site.json")))   # installed by recipe/09-ops.sh
 # google.sources[] in site.json: name, user (Google login), account (Stalwart account id it delivers to),
@@ -31,6 +31,9 @@ KEY = open("/root/.secrets/laptop-api.key").read().strip()
 API = "http://127.0.0.1:8080"
 
 def log(src, *a): print(f"[{src}]", *a, flush=True)
+
+PERMANENT = {"tooLarge", "invalidEmail"}   # JMAP SetError types that are about the message itself
+
 
 class Rejected(Exception):
     """Stalwart answered, but refused the message (notCreated)."""
@@ -113,7 +116,11 @@ class Source:
     def import_one(self, raw, internaldate, flags):
         req = urllib.request.Request(f"{API}/jmap/upload/{self.target}/", data=raw,
                                      headers={"Authorization": "Bearer " + KEY, "Content-Type": "message/rfc822"})
-        blob = json.load(urllib.request.urlopen(req, timeout=120))["blobId"]
+        try:
+            blob = json.load(urllib.request.urlopen(req, timeout=120))["blobId"]
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 413): raise Rejected(f"upload refused (HTTP {e.code}, {len(raw)/1e6:.1f} MB): too large?")
+            raise
         msg = email.message_from_bytes(raw[:65536], policy=email.policy.compat32)
         frm = email.utils.parseaddr(str(msg.get("From", "")))[1].lower()
         kw = {}
@@ -122,7 +129,12 @@ class Source:
         e = {"blobId": blob, "mailboxIds": {self.inbox: True}, "keywords": kw}
         if internaldate: e["receivedAt"] = internaldate
         r = jmap([["Email/import", {"accountId": self.target, "emails": {"x": e}}, "i"]])[0][1]
-        if "x" not in (r.get("created") or {}): raise Rejected(f"import failed: {r.get('notCreated')}")
+        if "x" not in (r.get("created") or {}):
+            err = (r.get("notCreated") or {}).get("x") or {}
+            # only problems with THIS message are skipped after 3 tries; anything else (over quota, server trouble)
+            # is a normal failure: retried, alerted, and nothing is skipped
+            if err.get("type") in PERMANENT: raise Rejected(f"import refused: {err}")
+            raise RuntimeError(f"import failed: {err}")
         mid = str(msg.get("Message-ID") or "").strip("<> \r\n")
         if mid and hasattr(self, "mids"): self.mids.add(mid)
 
@@ -142,6 +154,7 @@ class Source:
         n = 0
         for uid in uids:
             typ, d = self.imap.uid("FETCH", str(uid), "(X-GM-MSGID INTERNALDATE FLAGS BODY.PEEK[])")
+            if typ != "OK": raise RuntimeError(f"FETCH uid {uid} failed ({typ}): retrying next pass")
             meta = b"".join(p[0] if isinstance(p, tuple) else p for p in d if p)
             raw = next((p[1] for p in d if isinstance(p, tuple)), None)
             if raw is None: continue                                   # vanished meanwhile

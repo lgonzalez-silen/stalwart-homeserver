@@ -2,7 +2,7 @@
 # nv-google-trim: keep Google accounts with a storage limit (e.g. a school or work Google Workspace) small.
 # Only for sources with keep_days set in site.json (google.sources[]). Design: google/README.md
 #
-#   message older than keep_days AND its Message-ID is somewhere on the server (any folder) -> moved to that account's Trash
+#   message older than keep_days AND its Message-ID is kept on the server (a folder other than Trash, Junk, Google Spam) -> moved to that account's Trash
 #   everything else (newer, not on the server, no Message-ID, Spam, Trash, Drafts, Chats)   -> left alone
 #
 # Moving to Trash = Google deletes it for good after 30 days, so a mistake can be undone for a month (Trash -> Inbox).
@@ -30,8 +30,9 @@ def jmap(calls):
 def nv_mids(acct):
     """Every Message-ID the server KEEPS: in some folder other than Trash or Junk (those get emptied, so a copy
     that only sits there doesn't count, and the Google copy is left alone)."""
-    mbs = jmap([["Mailbox/get", {"accountId": acct, "properties": ["role"]}, "m"]])[0][1]["list"]
-    skip = [m["id"] for m in mbs if m.get("role") in ("trash", "junk")]
+    mbs = jmap([["Mailbox/get", {"accountId": acct, "properties": ["role", "name", "parentId"]}, "m"]])[0][1]["list"]
+    # also "Google Spam" (nv-spam-mirror's folder): its copies are removed when Google expires them
+    skip = [m["id"] for m in mbs if m.get("role") in ("trash", "junk") or (m.get("name") == "Google Spam" and not m.get("parentId"))]
     ids, pos = [], 0
     while True:
         r = jmap([["Email/query", {"accountId": acct, "position": pos, "limit": 10000,

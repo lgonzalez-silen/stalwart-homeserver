@@ -19,18 +19,20 @@ if [ -n "${NV_RENDER:-}" ]; then
   }
   add_line() { _log "add_line $1 <<< $2"; }
   nginx_apply() { _log "nginx_apply ${1:-reload}"; }
+  nginx_track() { _log "nginx_track $1"; }
 else
   run() { "$@"; }
   live() { return 0; }
-  _NGINX_PUT=$(mktemp /tmp/nv-nginx-put.XXXXXX)   # files to restore; a file, not an array: put may run in a pipe
-  trap 'rm -f "$_NGINX_PUT"' EXIT
+  _NGINX_PUT=/run/nv-nginx-put.$$   # nginx files written this run (a file, not an array: put may run in a pipe)
+  nginx_track() {  # nginx_track <file>: back up a file before changing it, so nginx_apply can put it back.
+                   # An older backup left by an interrupted run is kept: it is the last version that passed the test.
+    [ -e "$1.nv-prev" ] || { [ -e "$1" ] && cp -p "$1" "$1.nv-prev"; } || true
+    echo "$1" >> "$_NGINX_PUT"
+  }
   put() {  # put <path> [mode] [owner[:group]] < content: writes the whole file (keeps the inode and SELinux label)
     local p=$1 o=${3:-root:root}
     mkdir -p "${p%/*}"
-    if [[ $p == /etc/nginx/* ]]; then   # keep the previous version until nginx_apply has tested the new one
-      if [ -e "$p" ]; then cp -p "$p" "$p.nv-prev"; else : > "$p.nv-new"; fi
-      echo "$p" >> "$_NGINX_PUT"
-    fi
+    [[ $p == /etc/nginx/* ]] && nginx_track "$p"   # untested until nginx_apply
     cat > "$p"
     chmod "${2:-644}" "$p"; chown "$o" "$p"
   }
@@ -38,19 +40,22 @@ else
     grep -qxF -- "$2" "$1" 2>/dev/null || printf '%s\n' "$2" >> "$1"
   }
   nginx_apply() {  # nginx_apply [reload|restart|none]: test the config; if it fails, put back every nginx file this
-                   # run wrote (so a bad file never waits on disk for the next reboot) and stop the recipe
-    local p
-    if ! nginx -t -q 2>/tmp/nginx-test.$$; then
-      cat /tmp/nginx-test.$$ >&2; rm -f /tmp/nginx-test.$$
-      sort -u "$_NGINX_PUT" | while IFS= read -r p; do
-        if [ -e "$p.nv-prev" ]; then mv -f "$p.nv-prev" "$p"; else rm -f "$p"; fi; rm -f "$p.nv-new"
+                   # run changed (so a bad file never waits on disk for the next reboot) and stop the recipe
+    local p out list=()
+    [ -s "$_NGINX_PUT" ] && mapfile -t list < <(sort -u "$_NGINX_PUT")
+    if ! out=$(nginx -t 2>&1); then
+      printf '%s\n' "$out" >&2
+      for p in "${list[@]}"; do   # no pipe/subshell: one failed restore must not stop the others
+        if [ -e "$p.nv-prev" ]; then mv -f "$p.nv-prev" "$p" || echo "could not restore $p" >&2
+        else rm -f "$p" || echo "could not remove $p" >&2; fi
       done
+      rm -f "$_NGINX_PUT"
       echo "nginx config test FAILED: the previous config is back in place, nothing reloaded" >&2
       exit 1
     fi
-    rm -f /tmp/nginx-test.$$
-    sort -u "$_NGINX_PUT" | while IFS= read -r p; do rm -f "$p.nv-prev" "$p.nv-new"; done
-    : > "$_NGINX_PUT"
+    printf '%s\n' "$out" | grep -F '[warn]' >&2 || true   # warnings (e.g. a duplicate server_name) stay visible
+    for p in "${list[@]}"; do rm -f "$p.nv-prev"; done
+    rm -f "$_NGINX_PUT"
     case ${1:-reload} in none) ;; *) systemctl "${1:-reload}" nginx ;; esac
   }
 fi

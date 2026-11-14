@@ -25,6 +25,7 @@ LIVE=/etc/letsencrypt/live/$HOST
 dnf -y -q install nginx
 
 # Drop the stock welcome-page server block from nginx.conf (ours in conf.d replaces it)
+nginx_track /etc/nginx/nginx.conf   # edited in place below: restorable if the test fails
 python3 - <<'PY'
 import re, pathlib
 p = pathlib.Path('/etc/nginx/nginx.conf'); s = p.read_text()

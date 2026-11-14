@@ -82,9 +82,11 @@ class Google:
 
     def kept_outside_spam(self, key):
         """Still at Google outside Spam/Trash? (i.e. rescued directly in Gmail)"""
-        self.m.select(self.box["\\All"], readonly=True)        # All Mail excludes Spam and Trash
+        typ, _ = self.m.select(self.box["\\All"], readonly=True)        # All Mail excludes Spam and Trash
+        if typ != "OK": raise RuntimeError(f"{self.src}: cannot open All Mail ({typ})")
         if key.startswith("gm:"): typ, d = self.m.uid("SEARCH", "X-GM-MSGID", key[3:])
         else: typ, d = self.m.uid("SEARCH", "X-GM-RAW", f'"rfc822msgid:{key} -in:trash -in:spam"')
+        if typ != "OK": raise RuntimeError(f"{self.src}: All Mail search failed ({typ})")   # never read an error as "found"
         return bool(d and d[0])
 
 def mailbox_ids(acct):
