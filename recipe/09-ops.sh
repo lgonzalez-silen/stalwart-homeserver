@@ -20,6 +20,12 @@ put /etc/systemd/system/dnf-automatic.service.d/alert.conf <<'EOF'
 [Unit]
 OnFailure=nv-alert@%n.service
 EOF
+# certificate renewal (certbot-renew.timer, twice a day): a failure alerts too, long before anything expires
+mkdir -p /etc/systemd/system/certbot-renew.service.d
+put /etc/systemd/system/certbot-renew.service.d/alert.conf <<'EOF'
+[Unit]
+OnFailure=nv-alert@%n.service
+EOF
 
 echo "== weekly release check"
 install -d -m 700 /var/lib/nv-release-check
