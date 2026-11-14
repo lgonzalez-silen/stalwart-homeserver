@@ -14,7 +14,10 @@
 # B2 side (set up once from your computer with the B2 master key): a private bucket with lifecycle
 # "hidden files deleted after 30 days"; an application key that is bucket-only with list/read/write but
 # NO deleteFiles (restic hides instead of deleting, so an attacker with root on the server can't destroy
-# history for 30 days). Test it: overwrite keeps the old version, delete -> 401.
+# history for 30 days). B2's web form can't make that key ("Read and Write" includes deleteFiles); use its CLI:
+#   b2 account authorize                      (master key, on your computer)
+#   b2 key create --bucket <bucket> nv-restic listBuckets,listFiles,readFiles,writeFiles
+# This recipe checks the key's permissions every run and stops if it can delete.
 # Secrets: /root/.secrets/restic.env (RESTIC_REPOSITORY, RESTIC_PASSWORD, B2_ACCOUNT_ID/KEY), mode 0600;
 # keep a copy in your password manager. Without RESTIC_PASSWORD the backups are unreadable.
 
@@ -191,6 +194,16 @@ echo "== repository"
 if live; then
   set -a; . /root/.secrets/restic.env; set +a
   export RESTIC_CACHE_DIR=/var/cache/restic
+  # the key must not be able to delete (see header): B2's sign-in answer lists what it may do
+  # (the key goes to curl as a header file, never on its command line, where every local user could see it in ps)
+  caps=$(curl -s -H @<(printf 'Authorization: Basic %s\n' "$(printf '%s:%s' "$B2_ACCOUNT_ID" "$B2_ACCOUNT_KEY" | base64 -w0)") \
+    https://api.backblazeb2.com/b2api/v3/b2_authorize_account \
+    | jq -r '.apiInfo.storageApi.capabilities // empty | join(",")')
+  case ",$caps," in
+    ,,) echo "couldn't read the B2 key's permissions (wrong key in restic.env, or B2 unreachable)"; exit 1 ;;
+    *,deleteFiles,*) echo "the B2 key can delete files ($caps): make one without deleteFiles (see header)"; exit 1 ;;
+    *) echo "B2 key permissions: $caps (no delete: good)" ;;
+  esac
   restic cat config >/dev/null 2>&1 || restic init
 fi
 systemctl list-timers 'nv-backup*' --no-pager | head -4
