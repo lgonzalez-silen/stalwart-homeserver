@@ -2,17 +2,17 @@
 # recipe/05-stalwart-settings.sh — Stalwart settings that live in its database (not in files)
 # Run from your computer:  ./nv run recipe/05-stalwart-settings.sh        (NV_SHOW=1 ./nv run ... : read-only check)
 # Runs on the server against the admin API on http://127.0.0.1:8080 with the API key in
-# /root/.secrets/laptop-api.key (an admin API key restricted to 127.0.0.1/::1; create it in the WebUI and store it
-# there, mode 0600). Password auth stops working once the admin account has TOTP, hence the key.
+# /root/.secrets/laptop-api.key (an admin API key restricted to 127.0.0.1/::1, made by recipe/03). Password auth
+# stops working once the admin account has TOTP, hence the key.
 # In render mode the JSON it would send goes to <dir>/jmap.log.
-# Also (tools/ops/stalwart-network.py): listeners, allowed IPs, log format, and on a first build the cutover from
+# Also (tools/ops/stalwart-network.py): the certbot TLS certificate, listeners, allowed IPs, log format, and on a first build the cutover from
 # Stalwart's own 443 to nginx (see recipe/04's header). NV_SHOW=1 prints what it would change.
 # Settings: mail.mx_hosts (every MX name your domains use; listed in the MTA-STS policy).
 #           mail.max_message_mb (largest message accepted, default 25 like Gmail; Stalwart's default is 100).
 #           Large files belong in shared links: on a personal server every big message is a real share of the disk.
 #
-# Settings done by hand in the WebUI (record yours in your site notes when changed):
-#   - Wizard: default domain, ACME off, DKIM on, manual DNS (03-stalwart-wizard.md)
+# What this setup changes from Stalwart's defaults, and where (WebUI names, to check or redo by hand):
+#   - First setup (recipe/03): default domain, ACME off, DKIM keys on, manual DNS; admin account; the API key
 #   - TLS › Certificates: File /etc/stalwart/tls/fullchain.pem + privkey.pem
 #   - Listeners: smtp 25, submissions 465 (implicit), submission 587 (STARTTLS), imaps 993,
 #     sieve 127.0.0.1:4190 only (Roundcube's filters); http 127.0.0.1:8080 only; https 443 deleted;
@@ -21,8 +21,7 @@
 #   - Allowed IPs (auto-ban exemptions): 127.0.0.1, ::1 and the server's own IPv4 + IPv6 (Roundcube's SMTP comes
 #     from the server's public address, so failed webmail sends must not ban the server itself)
 #   - Telemetry › file tracer: ansi off (otherwise the logs are full of color codes)
-#   - Admin account: TOTP two-factor (secret in your password manager)
-#   - API key for these recipes and the tools: allowed IPs 127.0.0.1, ::1 (Bearer)
+#   - Admin account: TOTP two-factor, by hand (recipe/03-stalwart-admin.md)
 
 KEYFILE=/root/.secrets/laptop-api.key
 J() {   # J <json>: one JMAP request to the admin API

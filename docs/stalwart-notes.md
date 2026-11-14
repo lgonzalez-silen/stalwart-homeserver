@@ -8,6 +8,12 @@ handle it.
 - **Most settings live in Stalwart's database, not in files.** `/etc/stalwart/config.json` only says where the data
   store is. Everything else is set in the WebUI or through the admin API (`x:<Object>/set` JMAP methods). Recipe 05
   sets the ones this setup changes, so they're written down and re-appliable.
+- **The setup wizard is one API object.** In bootstrap mode (first start, no `config.json`) the wizard just saves
+  `x:Bootstrap` (hostname, default domain, ACME on/off, DKIM keys on/off, stores, log). Recipe 03 saves it itself,
+  signed in with `STALWART_RECOVERY_ADMIN=<user>:<password>` (a one-time value; Stalwart then doesn't print a
+  temporary password); the answer carries the new admin account's generated password. The same credential works in
+  normal mode, which is how recipe 03 makes the API key (`x:ApiKey/set` with the admin's `accountId`; the recovery
+  login itself is a virtual account and can't own one). Remove it afterwards: it bypasses two-factor.
 - **The admin account should have TOTP**, and then password login for scripts stops working. Scripts use an API key
   limited to 127.0.0.1/::1 instead (`/root/.secrets/laptop-api.key`, recipe 05 header).
 - **Some settings apply only at the next restart** (the DMARC/TLS report settings, for example). The nightly backup

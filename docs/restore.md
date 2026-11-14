@@ -16,9 +16,10 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
 
 1. A fresh AlmaLinux 10 on the VPS (keep the same IP if you can: it keeps your reverse DNS and reputation), then run
    recipes 01 to 07 as for a first build (and 09, 10, 11 if you use them: the Google module must be installed
-   before its state is put back in step 4), including Stalwart's setup wizard: it writes `/etc/stalwart/config.json`
-   (where the data lives), which isn't in the backup. Everything you set up after the wizard comes back with the data,
-   except one thing: the API key the tools use (see step 5).
+   before its state is put back in step 4). Recipe 03 does Stalwart's first setup: it writes
+   `/etc/stalwart/config.json` (where the data lives), which isn't in the backup. Everything else you set up comes
+   back with the data, except the API key the tools use (step 5). Skip `recipe/03-stalwart-admin.md`: the restored
+   admin account keeps its password and two-factor.
 2. Stop the services that use the data: `ssh root@<server> 'systemctl stop stalwart php-fpm'`
 3. Put `/root/.secrets/restic.env` back (mode 0600, fields from your password manager), then run recipe 08. It
    installs restic and the timers, and it won't re-create an existing repository.
@@ -45,9 +46,11 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
    - Roundcube's `des_key`: recipe 07 makes a new one, so outgoing-server passwords saved per identity (the
      `identity_smtp` plugin) can't be read. Re-enter them under Settings → Identities, or with
      `tools/migrate/rc-smtp-password.php`.
-   - The tools' API key: the restored database has the API key you made before, but `/root/.secrets/laptop-api.key`
-     holds the one from the fresh install. Either put the old key back from your password manager, or make a new
-     one in the WebUI (allowed IPs 127.0.0.1, ::1) and write it to that file (mode 0600). Until then the tools fail.
+   - The tools' API key: `/root/.secrets/laptop-api.key` holds the fresh install's key, which the restored database
+     doesn't know. Make a new one: `ssh root@<server> rm /root/.secrets/laptop-api.key /root/.secrets/stalwart-admin`,
+     then `./nv run recipe/03-stalwart.sh` (it creates a key for the restored admin account). Until then the tools
+     fail. The old key from before is still in the database: delete it in the WebUI (your account › Credentials ›
+     API Keys) if you no longer have it.
    - SSH host keys are new: on your computer, `ssh-keygen -R <server>` and accept the new fingerprint once.
 6. Check: log in to webmail, send and receive a test message, open a few old folders, and
    `systemctl list-timers 'nv-backup*'`, and (Google module) `systemctl start nv-fetch nv-spam-mirror.timer nv-google-trim.timer`. Delete `/var/lib/stalwart-empty` and `/var/tmp/r` when you're happy.

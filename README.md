@@ -89,10 +89,11 @@ Order matters. Each recipe's header says what it needs and what to check afterwa
    certificate. Copy [`dns/dnsconfig.example.js`](dns/dnsconfig.example.js) and fill in your values; the rest of the
    mail records (MX, SPF, DKIM, ...) come in step 6.
 3. `cp site.example.json site.json` and fill it in (reference below).
-4. In this order: `./nv run recipe/01-base.sh` (reboot if it says so), `02-certs.sh`, `03-stalwart.sh`, then
-   Stalwart's setup wizard and its few manual steps ([`recipe/03-stalwart-wizard.md`](recipe/03-stalwart-wizard.md)),
-   then `04-nginx.sh` (installs nginx, doesn't start it), `05-stalwart-settings.sh` (settings, and the switch of
-   port 443 from Stalwart to nginx), `06-mail-domain-certs.sh`, `07-roundcube.sh`.
+4. In this order: `./nv run recipe/01-base.sh` (reboot if it says so), `02-certs.sh`, `03-stalwart.sh` (installs
+   Stalwart and does its first setup, no wizard), `04-nginx.sh` (installs nginx, doesn't start it),
+   `05-stalwart-settings.sh` (settings, and the switch of port 443 from Stalwart to nginx). Then the two steps by
+   hand: save the admin password and turn on two-factor ([`recipe/03-stalwart-admin.md`](recipe/03-stalwart-admin.md)).
+   Then `06-mail-domain-certs.sh`, `07-roundcube.sh`.
 5. Backups and operations: `08-backup.sh` (create the B2 bucket and key first, see its header), then `09-ops.sh`.
    **Test a restore** ([`docs/restore.md`](docs/restore.md)) before you move real mail in.
 6. **Mail DNS** for each domain: MX, SPF, DKIM (values from Stalwart's WebUI), DMARC, MTA-STS and TLS-RPT TXT
@@ -111,6 +112,7 @@ Order matters. Each recipe's header says what it needs and what to check afterwa
 | `certs.extra_names` | more names on the main certificate (e.g. `mail.example.com` if your MX uses it) |
 | `mail.helper_domains` | every domain you host mail for (each gets mta-sts/autoconfig/autodiscover names) |
 | `mail.mx_hosts` | every MX hostname your domains use (listed in the MTA-STS policy) |
+| `mail.default_domain` | optional: Stalwart's default domain, if it isn't the hostname without its first label |
 | `mail.max_message_mb` | largest message accepted (default 25, like Gmail; Roundcube attachments ~3/4 of it) |
 | `admin.allow` | optional IPs/CIDRs allowed to open the WebUI at `/admin` (the admin account has TOTP either way) |
 | `webmail.hostname`, `product_name` | Roundcube's address and the name on its login page |

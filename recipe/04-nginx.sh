@@ -4,7 +4,7 @@
 # Settings: server.hostname, server.ipv4, server.ipv6, webmail.hostname (default rc.<server.hostname>),
 # admin.allow (optional list of IPs/CIDRs allowed to reach the WebUI at /admin; empty = open). This only hides the
 # web console: the admin API itself is the JMAP endpoint every mail app uses, so it can't be IP-limited here. What
-# protects admin is TOTP on the admin account and an API key limited to 127.0.0.1/::1 (recipe/05).
+# protects admin is TOTP on the admin account and an API key limited to 127.0.0.1/::1 (recipe/03).
 #
 # First build: run this (nginx installed + tested, NOT started while Stalwart has 443), then
 # recipe/05-stalwart-settings.sh: it moves Stalwart's HTTP to 127.0.0.1:8080, sets X-Forwarded-For, removes Stalwart's
@@ -139,7 +139,7 @@ EOF
 
 nginx_apply none   # tested here; started/reloaded below
 if ss -tlnpH | grep -q ':443 .*stalwart'; then
-  echo "Stalwart still owns 443: nginx installed + validated but NOT started (do step 2, then 3)"
+  echo "Stalwart still owns 443: nginx installed + validated but NOT started: recipe/05 hands 443 over"
 else
   systemctl enable --now nginx
   # restart, not reload: a reload that changes a limit_req_zone key fails at runtime ([emerg] in

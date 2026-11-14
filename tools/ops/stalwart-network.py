@@ -1,7 +1,8 @@
 # stalwart-network.py: run by recipe/05 on the server (python3 - <cutover yes|no> <show 1|"">).
-# Brings Stalwart's listeners, allowed IPs and log format to the state this setup expects, through the admin API.
+# Brings Stalwart's TLS certificate, listeners, allowed IPs and log format to the state this setup expects, through the admin API.
 # Prints every change; with show=1 it only prints what it would change.
-#   always:   sieve on 127.0.0.1:4190 only; submission on 587 (STARTTLS) exists; pop3/pop3s removed;
+#   always:   the certbot certificate (/etc/stalwart/tls, refreshed by certbot's deploy hook) is loaded;
+#             sieve on 127.0.0.1:4190 only; submission on 587 (STARTTLS) exists; pop3/pop3s removed;
 #             allowed IPs 127.0.0.1, ::1 and the server's own IPv4/IPv6; log-file tracers without ANSI colors
 #   cutover:  http on 127.0.0.1:8080 only; Client IP source = X-Forwarded-For (1 hop); the https 443 listener removed.
 #             recipe/05 then restarts Stalwart and starts nginx (only when nginx isn't running yet).
@@ -31,6 +32,12 @@ def change(what, call):
     if not SHOW:
         api([call])
 
+
+CERT, PKEY = "/etc/stalwart/tls/fullchain.pem", "/etc/stalwart/tls/privkey.pem"
+certs = api([["x:Certificate/get", {"ids": None, "properties": ["certificate"]}, "c"]])[0][1]["list"]
+if not any((c.get("certificate") or {}).get("filePath") == CERT for c in certs):
+    change(f"TLS certificate from {CERT} (certbot)", ["x:Certificate/set", {"create": {"n": {
+        "certificate": {"@type": "File", "filePath": CERT}, "privateKey": {"@type": "File", "filePath": PKEY}}}}, "c"])
 
 ls = {l["name"]: l for l in api([["x:NetworkListener/get", {"ids": None}, "l"]])[0][1]["list"]}
 by_port = lambda port: [l for l in ls.values() if any(b.endswith(f":{port}") for b in l.get("bind") or {})]
