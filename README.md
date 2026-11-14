@@ -78,6 +78,26 @@ site.json                            your settings (start from site.example.json
 Recipes are plain bash, safe to re-run, and take every site-specific value from `site.json`. The habit that keeps
 this safe: **render and diff before every run.** The diff shows exactly which lines on the server would change.
 
+### Your site repo
+
+This repo holds no site data: nothing in it names your server, your domains or your people. Keep yours in a second,
+**private** repo (or at least a folder you back up), next to this one:
+
+```
+my-mail/                     private
+  site.json                  your settings: ./nv --site ../my-mail/site.json run ...  (or export NV_SITE=...)
+  dns/                       dnsconfig.js (from dns/dnsconfig.example.js), creds.json, and copies of
+                             dns/preview + dns/push (they work on the folder they're in)
+  STATUS.md                  what is true now: what's done, what's open, what to check next
+  DECISIONS.md               why things are the way they are (dated), so nobody re-argues them later
+  secrets/                   git-ignored, if you keep local copies at all (your password manager is better)
+```
+
+STATUS and DECISIONS are what let a fresh agent session (or you, a year later) pick up where things stand instead
+of guessing. Ask the agent to update them as it goes, and read the diff before you commit. When you find something
+this repo gets wrong, fix it here (a pull request, or your fork) rather than in your site repo, so the next build
+gets it too.
+
 ## First build
 
 Order matters. Each recipe's header says what it needs and what to check afterwards.
