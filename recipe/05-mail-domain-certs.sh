@@ -18,7 +18,9 @@ for d in "${MAIL_DOMAINS[@]}"; do for p in "${PREFIXES[@]}"; do names+=("$p.$d")
 echo "== ACME webroot on port 80 (before the https redirect)"
 mkdir -p $WEBROOT/.well-known/acme-challenge
 restorecon -R $WEBROOT 2>/dev/null || true
-NGINX_CONF=/etc/nginx/conf.d/10-$NV_SERVER_HOSTNAME.conf python3 - <<'PY'
+C10=/etc/nginx/conf.d/10-$NV_SERVER_HOSTNAME.conf
+live && { cp -p "$C10" "$C10.nv-prev"; echo "$C10" >> "$_NGINX_PUT"; }   # edited below, not via put: restorable too
+NGINX_CONF=$C10 python3 - <<'PY'
 import os, pathlib, re
 p = pathlib.Path(os.environ['NGINX_CONF']); s = p.read_text()
 if 'acme-challenge' not in s:
@@ -30,7 +32,7 @@ if 'acme-challenge' not in s:
 }""", 1)
     p.write_text(s); print("added acme-challenge location")
 PY
-nginx -t -q && systemctl reload nginx
+nginx_apply reload
 
 echo "== issue/expand cert '$CERT' for ${#names[@]} names"
 args=(); for n in "${names[@]}"; do args+=(-d "$n"); done
@@ -55,7 +57,7 @@ server {
     }
 }
 EOF
-nginx -t -q && systemctl reload nginx
+nginx_apply reload
 
 echo "== checks"
 for d in "${MAIL_DOMAINS[@]}"; do

@@ -194,7 +194,7 @@ server {
     }
 }
 EOF
-nginx -t -q
+nginx_apply none
 systemctl restart php-fpm
 systemctl reload nginx
 

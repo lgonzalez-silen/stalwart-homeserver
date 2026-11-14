@@ -74,5 +74,5 @@ CONF
   OUT+=$block
 done
 printf '%s' "$OUT" | put $out
-nginx -t 2>&1 | tail -1 && systemctl reload nginx
+nginx_apply reload
 grep -E "^# |server_name" $out

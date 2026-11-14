@@ -49,12 +49,17 @@ class Google:
 
     def spam(self):
         """{key: uid} of everything in Google's Spam right now."""
-        self.m.select(self.box["\\Junk"], readonly=True)
+        # Every IMAP answer is checked: an empty result from a Google error would otherwise read as "Google dropped
+        # all spam" and remove every mirrored copy.
+        typ, _ = self.m.select(self.box["\\Junk"], readonly=True)
+        if typ != "OK": raise RuntimeError(f"{self.src}: cannot open Spam ({typ})")
         typ, d = self.m.uid("SEARCH", "ALL")
+        if typ != "OK": raise RuntimeError(f"{self.src}: Spam search failed ({typ}: {d})")
         uids = d[0].split() if d and d[0] else []
         out = {}
         for i in range(0, len(uids), 200):
             typ, d = self.m.uid("FETCH", b",".join(uids[i:i+200]).decode(), "(X-GM-MSGID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
+            if typ != "OK": raise RuntimeError(f"{self.src}: Spam fetch failed ({typ})")
             for p in d:
                 if not isinstance(p, tuple): continue
                 uid = int(re.search(rb"UID (\d+)", p[0]).group(1)); gm = re.search(rb"X-GM-MSGID (\d+)", p[0]).group(1).decode()

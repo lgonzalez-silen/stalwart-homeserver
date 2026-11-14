@@ -32,6 +32,10 @@ API = "http://127.0.0.1:8080"
 
 def log(src, *a): print(f"[{src}]", *a, flush=True)
 
+class Rejected(Exception):
+    """Stalwart answered, but refused the message (notCreated)."""
+
+
 def jmap(calls):
     body = {"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"], "methodCalls": calls}
     r = urllib.request.Request(API + "/jmap/", data=json.dumps(body).encode(),
@@ -53,7 +57,7 @@ class Source:
         self.inbox = [m["id"] for m in jmap([["Mailbox/get", {"accountId": self.target, "properties": ["role"]}, "m"]])[0][1]["list"]
                       if m.get("role") == "inbox"][0]
         self.imap = None
-        self.fails = 0; self.alerted = None
+        self.fails = 0; self.alerted = None; self.rejects = {}
 
     def connect(self):
         pw = open(f"/root/.secrets/fetch/{self.name}.pw").read().strip()
@@ -118,7 +122,7 @@ class Source:
         e = {"blobId": blob, "mailboxIds": {self.inbox: True}, "keywords": kw}
         if internaldate: e["receivedAt"] = internaldate
         r = jmap([["Email/import", {"accountId": self.target, "emails": {"x": e}}, "i"]])[0][1]
-        if "x" not in (r.get("created") or {}): raise RuntimeError(f"import failed: {r.get('notCreated')}")
+        if "x" not in (r.get("created") or {}): raise Rejected(f"import failed: {r.get('notCreated')}")
         mid = str(msg.get("Message-ID") or "").strip("<> \r\n")
         if mid and hasattr(self, "mids"): self.mids.add(mid)
 
@@ -155,7 +159,18 @@ class Source:
             elif mid and self.exists_on_nv(mid):
                 result = "skip-present"
             else:
-                self.import_one(raw, idate, flags); result = "imported"; n += 1
+                try:
+                    self.import_one(raw, idate, flags); result = "imported"; n += 1
+                except Rejected as e:
+                    # Stalwart refused this one message (e.g. over the size limit). Retry on the next passes; after 3
+                    # refusals, record it, tell the owner once, and move on, so one message can't block the account.
+                    self.rejects[uid] = self.rejects.get(uid, 0) + 1
+                    if self.rejects[uid] < 3: raise
+                    result = "rejected"
+                    body = (f"One message in {self.cfg['user']} could not be imported and was skipped (it stays at Google).\n\n"
+                            f"Google UID {uid}, {len(raw)/1e6:.1f} MB, received {idate}.\nReason: {e}\n\n"
+                            "Most often it is larger than the server's message size limit. Read it in Google's web mail.\n")
+                    subprocess.run(["/usr/local/sbin/nv-alert", f"mail pull skipped a message: {self.name}"], input=body.encode())
             c.execute("insert or ignore into done values (?,?,?,?,?)", (self.name, key, uid, datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), result))
             c.execute("update mark set last_uid=? where src=?", (uid, self.name))
             c.commit()
@@ -182,7 +197,14 @@ class Source:
             subprocess.run(["/usr/local/sbin/nv-alert", f"mail pull failing: {self.name}"], input=body.encode())
 
 def run(src, once=False):
-    s = Source(src, SOURCES[src]); c = db()
+    while True:      # Source() talks to Stalwart; at boot it may not be up yet: keep trying instead of dying silently
+        try:
+            s = Source(src, SOURCES[src]); break
+        except Exception as e:
+            log(src, f"start failed, retrying in {POLL}s: {type(e).__name__}: {e}")
+            if once: raise
+            time.sleep(POLL)
+    c = db()
     while True:
         try:
             s.one_pass(c); s.fails = 0

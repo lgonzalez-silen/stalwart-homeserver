@@ -2,7 +2,9 @@
 # recipe/04-nginx.sh — nginx as the only listener on 80/443, in front of Stalwart's HTTP
 # Run from your computer:  ./nv run recipe/04-nginx.sh
 # Settings: server.hostname, server.ipv4, server.ipv6, webmail.hostname (default rc.<server.hostname>),
-# admin.allow (optional list of IPs/CIDRs allowed to reach /admin; empty = open, protect the admin login with TOTP)
+# admin.allow (optional list of IPs/CIDRs allowed to reach the WebUI at /admin; empty = open). This only hides the
+# web console: the admin API itself is the JMAP endpoint every mail app uses, so it can't be IP-limited here. What
+# protects admin is TOTP on the admin account and an API key limited to 127.0.0.1/::1 (recipe/07).
 #
 # Order of the cutover (first build):
 #   1. Run this script (installs + validates config, does NOT start nginx while Stalwart has 443)
@@ -136,7 +138,7 @@ proxy_read_timeout 1h;                           # JMAP push / eventsource
 proxy_buffering off;
 EOF
 
-nginx -t
+nginx_apply none   # tested here; started/reloaded below
 if ss -tlnpH | grep -q ':443 .*stalwart'; then
   echo "Stalwart still owns 443: nginx installed + validated but NOT started (do step 2, then 3)"
 else

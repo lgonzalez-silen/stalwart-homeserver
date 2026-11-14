@@ -28,10 +28,14 @@ def jmap(calls):
     return json.load(urllib.request.urlopen(r, timeout=120))["methodResponses"]
 
 def nv_mids(acct):
-    """Every Message-ID in the server account, all folders."""
+    """Every Message-ID the server KEEPS: in some folder other than Trash or Junk (those get emptied, so a copy
+    that only sits there doesn't count, and the Google copy is left alone)."""
+    mbs = jmap([["Mailbox/get", {"accountId": acct, "properties": ["role"]}, "m"]])[0][1]["list"]
+    skip = [m["id"] for m in mbs if m.get("role") in ("trash", "junk")]
     ids, pos = [], 0
     while True:
-        r = jmap([["Email/query", {"accountId": acct, "position": pos, "limit": 10000}, "q"]])[0][1]
+        r = jmap([["Email/query", {"accountId": acct, "position": pos, "limit": 10000,
+                                   "filter": {"inMailboxOtherThan": skip} if skip else None}, "q"]])[0][1]
         if not r["ids"]: break
         ids += r["ids"]; pos += len(r["ids"])
     out = set()

@@ -82,7 +82,7 @@ touched. Accounts without `keep_days` are never touched.
    `account` is the Stalwart account id (a short letter code). To list them on the server:
 
    ```sh
-   curl -s -H "Authorization: Bearer $(cat /root/.secrets/laptop-api.key)" -H "Content-Type: application/json" \
+   curl -s -H @<(printf 'Authorization: Bearer %s\n' "$(</root/.secrets/laptop-api.key)") -H "Content-Type: application/json" \
      http://127.0.0.1:8080/jmap/ \
      -d '{"using":["urn:ietf:params:jmap:core","urn:stalwart:jmap"],"methodCalls":[["x:Account/get",{"properties":["name"]},"a"]]}' \
      | jq -r '.methodResponses[0][1].list[] | "\(.id)  \(.name)"'

@@ -118,10 +118,10 @@ echo "== SELinux enforcing (needs reboot + relabel if it was disabled)"
 # Write the whole file: on some provider images it ends up empty (0 bytes) after
 # the first dnf upgrade, and an empty config silently means permissive.
 NEED_REBOOT=no
-if ! grep -q '^SELINUX=enforcing' /etc/selinux/config 2>/dev/null; then
-  [ "$(getenforce)" = "Disabled" ] && touch /.autorelabel
-  NEED_REBOOT=yes
-fi
+# Relabel whenever SELinux is off right now, even if the config already says enforcing (an image can boot with
+# selinux=0 on the kernel line): enforcing on an unlabeled disk can lock everyone out, sshd included.
+if [ "$(getenforce)" = "Disabled" ]; then touch /.autorelabel; NEED_REBOOT=yes; fi
+grep -q '^SELINUX=enforcing' /etc/selinux/config 2>/dev/null || NEED_REBOOT=yes
 put /etc/selinux/config <<'EOF'
 SELINUX=enforcing
 SELINUXTYPE=targeted

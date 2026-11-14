@@ -25,7 +25,8 @@
 KEYFILE=/root/.secrets/laptop-api.key
 J() {   # J <json>: one JMAP request to the admin API
   if live; then
-    curl -sf -H "Authorization: Bearer $(cat $KEYFILE)" -H "Content-Type: application/json" \
+    # the key goes to curl as a header file, never on its command line (visible to every local user in ps)
+    curl -sf -H @<(printf 'Authorization: Bearer %s\n' "$(<$KEYFILE)") -H "Content-Type: application/json" \
       http://127.0.0.1:8080/jmap/ --data-binary "$1"
   else
     printf '%s\n' "$1" >> "$NV_RENDER/jmap.log"
