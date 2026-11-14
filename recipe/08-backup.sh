@@ -118,7 +118,8 @@ out=$(mktemp); rc=0
   echo; echo "== check (structure + 10% of data re-downloaded)"; } >"$out" 2>&1
 restic check --read-data-subset=10% >>"$out" 2>&1 || rc=$?
 status=$([ $rc = 0 ] && echo OK || echo "FAILED (exit $rc)")
-nv-alert "monthly backup check: $status" <"$out"
+# mail only when something is wrong; a good check shows on the dashboard (nv-status)
+[ $rc = 0 ] || nv-alert "monthly backup check: $status" <"$out"
 rm -f "$out"; exit $rc
 EOF
 chmod 700 /usr/local/sbin/nv-backup /usr/local/sbin/nv-backup-check /usr/local/sbin/nv-alert

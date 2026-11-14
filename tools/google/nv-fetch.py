@@ -45,6 +45,8 @@ def db():
     c = sqlite3.connect(STATE, timeout=30)
     c.execute("create table if not exists mark (src text primary key, uidvalidity int, last_uid int, started text)")
     c.execute("create table if not exists done (src text, key text, uid int, at text, result text, primary key (src, key))")
+    # heartbeat for nv-status: when each source last checked Google successfully, and its last error
+    c.execute("create table if not exists pass (src text primary key, ok_at text, err_at text, err text)")
     return c
 
 class Source:
@@ -265,8 +267,15 @@ def run(src, once=False):
     while True:
         try:
             s.one_pass(c); s.fails = 0
+            c.execute("insert into pass (src, ok_at) values (?, ?) on conflict(src) do update set ok_at=excluded.ok_at", (src, now()))
+            c.commit()
         except Exception as e:
             s.failed(f"{type(e).__name__}: {e}")
+            try:
+                c.execute("insert into pass (src, err_at, err) values (?, ?, ?) on conflict(src) do update set "
+                          "err_at=excluded.err_at, err=excluded.err", (src, now(), f"{type(e).__name__}: {e}"[:300]))
+                c.commit()
+            except Exception: pass
             if once: traceback.print_exc()
         if once: return
         time.sleep(POLL)

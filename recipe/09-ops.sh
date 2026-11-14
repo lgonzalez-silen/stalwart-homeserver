@@ -1,12 +1,13 @@
 #!/bin/bash
 # recipe/09-ops.sh — quiet operations: you hear from the server only when something needs you.
 #   - Weekly release check for software outside the OS repos (Stalwart, Roundcube, identity_smtp, restic):
-#     mails ONCE per new upstream version (nv-alert), silent otherwise. Upgrades stay deliberate: read the
+#     lists newer upstream versions on the dashboard (nv-status), no mail. Upgrades stay deliberate: read the
 #     release notes, then rerun the matching recipe.
 #   - OS security updates: dnf-automatic (recipe/01) installs them daily and reboots when needed, silently;
 #     a failed run mails via nv-alert@ (OnFailure).
 #   - Junk watch (nv-junk-report, daily): mails only when an account's Junk spikes; see tools/ops/.
 #   - nv-set-password <login>: set a user's password (typed without echo), then test it with a real IMAP login.
+#   - nv-status (every 15 min): the dashboard behind ./nv status; mails only when a critical check turns bad.
 # Also installs /etc/nv/site.json, which the tools on the server read.
 # Not here on purpose: Cockpit (no web console; SSH keys only), mail summaries of routine updates.
 # Not checked: the pinned Stretched Elastic skin commit (recipe/06); look at it when upgrading Roundcube.
@@ -64,7 +65,7 @@ checks = [   # name, installed version, latest (callable), where to read the not
      lambda: latest_release("restic/restic"), "https://github.com/restic/restic/releases"),
 ]
 seen = set((read(STATE) or "").splitlines())
-new, problems = [], []
+new, problems, avail = [], [], []
 for name, have, latest, url in checks:
     try:
         l = latest()
@@ -72,17 +73,17 @@ for name, have, latest, url in checks:
         problems.append(f"{name}: couldn't check ({e})"); continue
     if DRY: print(f"{name:14} installed {have}  latest {l}")
     if not have: problems.append(f"{name}: installed version unknown"); continue
+    if ver(l) > ver(have): avail.append(f"{name} {l}")
     if ver(l) > ver(have) and f"{name} {l}" not in seen:
         new.append(f"{name}: installed {have}, latest {l}\n    {url}")
         seen.add(f"{name} {l}")
 if DRY:
-    print("would mail:", [n.split("\n")[0] for n in new] or "nothing"); print("problems:", problems or "none"); sys.exit(0)
+    print("available:", avail or "nothing new"); print("problems:", problems or "none"); sys.exit(0)
+# for the dashboard (nv-status): what's newer than installed right now. No mail: you see it in ./nv status.
+if len(problems) < len(checks):
+    with open(STATE + ".available.tmp", "w") as f: f.write("\n".join(avail) + ("\n" if avail else ""))
+    os.replace(STATE + ".available.tmp", os.path.join(os.path.dirname(STATE), "available"))
 if new:
-    body = ("Newer releases available (you get this once per version):\n\n" + "\n".join(new) +
-            "\n\nUpgrade deliberately: read the release notes, then rerun the matching recipe"
-            " (Stalwart: recipe/03, Roundcube + identity_smtp: recipe/06 then 06b, restic: recipe/08).\n")
-    subprocess.run(["/usr/local/sbin/nv-alert", "updates available: " + ", ".join(n.split(":")[0] for n in new)],
-                   input=body.encode(), check=True)
     with open(STATE + ".tmp", "w") as f: f.write("\n".join(sorted(seen)) + "\n")
     os.replace(STATE + ".tmp", STATE)
 # GitHub hiccups are normal; only a run where every check failed counts as a failure (OnFailure mails)
@@ -124,5 +125,10 @@ repo_file tools/ops/nv-junk-report.py | put /usr/local/sbin/nv-junk-report 700
 repo_file tools/ops/nv-set-password.py | put /usr/local/sbin/nv-set-password 700
 repo_file tools/ops/nv-junk-report.service | put /etc/systemd/system/nv-junk-report.service
 repo_file tools/ops/nv-junk-report.timer | put /etc/systemd/system/nv-junk-report.timer
+repo_file tools/ops/nv-status.py | put /usr/local/sbin/nv-status 700
+repo_file tools/ops/nv-status.service | put /etc/systemd/system/nv-status.service
+repo_file tools/ops/nv-status.timer | put /etc/systemd/system/nv-status.timer
 systemctl daemon-reload
 systemctl enable -q --now nv-junk-report.timer
+systemctl enable -q --now nv-status.timer
+live && /usr/local/sbin/nv-status --print | head -40   # first run: what the dashboard shows

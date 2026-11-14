@@ -1,0 +1,7 @@
+[Unit]
+Description=Collect the dashboard status (./nv status) and alert on critical changes
+After=stalwart.service
+OnFailure=nv-alert@%n.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nv-status

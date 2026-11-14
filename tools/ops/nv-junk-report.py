@@ -1,5 +1,6 @@
 #!/usr/bin/python3 -I
-# nv-junk-report: Junk watch. Runs daily from a timer and mails (nv-alert) ONLY when an account spikes.
+# nv-junk-report: Junk report. Runs daily from a timer to prune the detail accounts' old Junk; spikes show on the
+# dashboard (nv-status), not by mail. --show prints the full report for review.
 #   - every account: messages that arrived in Junk in the last 24h, top sender domains, 7-day baseline
 #   - SPIKE in the subject when an account's 24h count > max(MIN_SPIKE, 3 x its daily average over the prior 7 days)
 #   - junk_report.detail_accounts in site.json (e.g. a forward-only account nobody reads on the server): each Junk
@@ -77,7 +78,5 @@ body = ("Messages filed in Junk per account. Spike = more than max(%d, 3x the 7-
         + "\n".join(lines) + "\n" + "\n".join(detail) + "\n")
 if SHOW:
     print(body); sys.exit(0)
-if not spikes:
-    sys.exit(0)
-subject = "Junk SPIKE: " + ", ".join(spikes)
-subprocess.run(["/usr/local/sbin/nv-alert", subject], input=body.encode(), check=True)
+# no mail: spikes show on the dashboard (nv-status). The timer run still prunes the detail accounts' old Junk.
+sys.exit(0)
