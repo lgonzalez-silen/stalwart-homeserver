@@ -19,30 +19,14 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
    `/etc/stalwart/config.json` (where the data lives), which isn't in the backup. Everything else you set up comes
    back with the data, except the API key the tools use (step 5). Skip `recipe/03-stalwart-admin.md`: the restored
    admin account keeps its password and two-factor.
-2. Stop the services that use the data: `ssh root@<server> 'systemctl stop stalwart php-fpm'`
-3. `./nv sh tools/b2-setup.sh` (a new key for the new server, the same restic password), then run recipe 08. It
-   installs restic and the timers, and it won't re-create an existing repository. **Then stop the nightly backup
-   until the restore is done:** `ssh root@<server> systemctl stop nv-backup.timer`. Otherwise a run in between saves
-   the empty new server as the newest snapshot (and "latest" would then restore nothing).
-4. Restore, on the server:
-
-   ```sh
-   set -a; . /root/.secrets/restic.env; set +a
-   restic snapshots --compact | tail -5          # pick one BY ITS ID: check its date and size are the old server's
-   restic restore <snapshot-id> --target /var/tmp/r
-   mv /var/lib/stalwart /var/lib/stalwart-empty
-   mv /var/tmp/r/var/lib/stalwart-snap /var/lib/stalwart && chown -R stalwart:stalwart /var/lib/stalwart
-   rm -f /var/lib/roundcube/roundcube.db-wal /var/lib/roundcube/roundcube.db-shm   # the fresh DB's journal, not ours
-   install -o nginx -g nginx -m 640 /var/tmp/r/var/backups/nv/roundcube.db /var/lib/roundcube/roundcube.db
-   # Google module only: where each pull stopped, so mail since the backup is still fetched.
-   # (recipe 11 must have run first; if this says "not found", run it, then repeat these three lines)
-   systemctl stop nv-fetch nv-spam-mirror.timer nv-google-trim.timer
-   install -m 600 /var/tmp/r/var/backups/nv/nv-fetch-state.db /var/lib/nv-fetch/state.db
-   ls -l /var/lib/nv-fetch/state.db
-   restorecon -R /var/lib/stalwart /var/lib/roundcube
-   systemctl start stalwart php-fpm
-   ```
-
+2. `./nv sh tools/b2-setup.sh` (a new key for the new server, the same restic password), then run recipe 08. It
+   installs restic, the timers and `nv-restore`, and it won't re-create an existing repository.
+3. On the server, `ssh root@<server> nv-restore` lists the snapshots. Pick one **by its ID** (its date and size must
+   be the old server's: a backup made after the rebuild would be the empty new server).
+4. `ssh root@<server> nv-restore <snapshot-id>`. It stops the backups (so the empty new server can't become the newest
+   snapshot), the Google module, Stalwart and webmail; restores that snapshot; puts Stalwart's data, Roundcube's
+   database and the Google module's state in place (the data it replaces is kept in `/var/lib/stalwart-empty`); and
+   starts Stalwart and webmail again. Backups and the Google module stay stopped until step 6.
 5. What wasn't in the backup, on purpose:
    - TLS certificates: recipe 02 issues new ones.
    - Roundcube's `des_key`: recipe 07 makes a new one, so outgoing-server passwords saved per identity (the
@@ -54,8 +38,9 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
      fail. The old key from before is still in the database: delete it in the WebUI (your account › Credentials ›
      API Keys) if you no longer have it.
    - SSH host keys are new: on your computer, `ssh-keygen -R <server>` and accept the new fingerprint once.
-6. Check: log in to webmail, send and receive a test message, open a few old folders, and
-   start the nightly backup again (`systemctl start nv-backup.timer`, then `systemctl list-timers 'nv-backup*'`), and (Google module) `systemctl start nv-fetch nv-spam-mirror.timer nv-google-trim.timer`. Delete `/var/lib/stalwart-empty` and `/var/tmp/r` when you're happy.
+6. Check: log in to webmail, send and receive a test message, open a few old folders. Then
+   `ssh root@<server> nv-restore --done`: it starts the backups and the Google module again and deletes the replaced
+   data and the scratch copy.
 
 ## One mailbox, or a few messages
 

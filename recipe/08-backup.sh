@@ -175,6 +175,8 @@ EOF
 chmod 700 /usr/local/sbin/nv-backup /usr/local/sbin/nv-backup-check /usr/local/sbin/nv-alert
 dnf -y -q install bc sqlite
 
+repo_file tools/ops/nv-restore.sh | put /usr/local/sbin/nv-restore 700   # restores: docs/restore.md
+
 echo "== systemd units"
 put /etc/systemd/system/nv-alert@.service <<'EOF'
 [Unit]
