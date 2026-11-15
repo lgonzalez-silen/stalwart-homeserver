@@ -10,7 +10,7 @@ Pick a route:
 |---|---|
 | Old server still running, mailboxes of normal size | **A.** `vandelay import imap` straight from the old server |
 | Old server still running, very large mailboxes | **B.** Run Vandelay **on the old server** against its own IMAP (`imaps://127.0.0.1`), copy the archive file over, export on the new server |
-| Only the old mbox files are left (server gone, or IMAP not usable) | **C.** `migrate-user.sh`: mbox → Maildir → Vandelay |
+| Only the old mbox files are left (server gone, or IMAP not usable) | **C.** `migrate-user.sh`: mbox → Maildir → Vandelay (Vandelay's own mbox importer is for Google Takeout only and would drop flags and folders here: [vandelay#68](https://github.com/stalwartlabs/vandelay/issues/68)) |
 | Mail kept arriving at the old server after the first copy | **D.** `delta-import.py` for a catch-up |
 
 B is usually the best. The old server's own IMAP software reads its mbox files correctly (read/answered/flagged

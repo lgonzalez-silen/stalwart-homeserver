@@ -43,8 +43,9 @@ handle it.
   train task.
 - **Forwarded mail scores badly** (SPF fails for the original sender, recipients don't match). Pulling mail from the
   other provider (the Google module) avoids it instead of fighting it.
-- **The `ClassifySpam` action can't express the null sender `<>`** (bounces), so such messages can't be tested
-  through it. Reported upstream.
+- **The `ClassifySpam` action can't express the null sender `<>`** in 1.1.0 (bounces), so such messages can't be
+  tested through it. Fixed upstream for the next weekly release after 1.1.0: `"mailFrom": null` (or leaving it out)
+  is classified as `MAIL FROM:<>`.
 
 ## Security
 
