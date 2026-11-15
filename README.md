@@ -154,7 +154,7 @@ yours to do, not your agent's: they need your accounts, your password manager or
 | `webmail.hostname`, `product_name` | Roundcube's address and the name on its login page |
 | `webmail.identity_smtp` | optional, default false: let each webmail identity send through its own outside SMTP server (third-party plugin; recipe 07) |
 | `webmail.local_plugins`, `local_skins`, `compact_skin_source` | the optional skin and its plugins (recipe 07b) |
-| `backup.bucket`, `path`, `b2_master_key_id`, `b2_master_key`, `restic_password`, `op_account` | for `tools/b2-setup.sh`: the B2 bucket, the folder in it, and 1Password references (`op://…`) to the master key and the restic password (empty: asked at a hidden prompt) |
+| `backup.bucket`, `path`, `b2_master_key_id`, `b2_master_key`, `restic_password` | for `tools/b2-setup.sh`: the B2 bucket, the folder in it, and where the master key and the restic password come from: any password manager (`cmd:<command>`), 1Password (`op://…`), or a hidden prompt (empty) |
 | `alerts.to`, `from`, `account` | who gets alerts and the sender shown; `account` is optional: the Stalwart account id to deliver to, when recipe 08 shouldn't pick the owner of `to` |
 | `websites[]` | `name`, `cert` (`dns` or `http`), `source` (folder on your computer), `webmail_redirect` |
 | `google.sources[]` | `name`, `user`, `account`, `own`, optional `enabled`, `spam_mirror`, `keep_days` ([details](tools/google/README.md)) |

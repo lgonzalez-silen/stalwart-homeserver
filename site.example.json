@@ -29,10 +29,9 @@
   "backup": {
     "bucket": "example-mail-backup",
     "path": "nv",
-    "b2_master_key_id": "op://Private/Backblaze/master application key id",
-    "b2_master_key": "op://Private/Backblaze/master application key",
-    "restic_password": "op://Private/mail restic password/password",
-    "op_account": ""
+    "b2_master_key_id": "",
+    "b2_master_key": "",
+    "restic_password": ""
   },
   "alerts": {
     "to": "alice@example.com",

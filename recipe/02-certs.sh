@@ -3,8 +3,10 @@
 # Wildcard via Cloudflare DNS-01, owned by certbot. nginx and Stalwart both use it;
 # Stalwart's own ACME stays off (several cert mechanisms fighting each other is a classic pain).
 #
-# Run from your computer (the token goes straight from your password manager into a root-only file; 1Password shown):
-#   op read "<secret reference of the token>" \
+# Run from your computer (the token goes straight from your password manager into a root-only file). Replace
+# <print the token> with your manager's command: op read "op://…" (1Password), bw get password <item> (Bitwarden),
+# pass show <name>, security find-generic-password -w -s <name> (macOS Keychain); or use cat and paste it, then Ctrl-D:
+#   <print the token> \
 #     | ssh root@<server.hostname> 'umask 077; mkdir -p /root/.secrets; { printf "dns_cloudflare_api_token = "; cat; } > /root/.secrets/cloudflare.ini'
 #   ./nv run recipe/02-certs.sh
 #

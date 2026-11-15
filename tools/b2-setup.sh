@@ -8,11 +8,16 @@
 #    can't wipe the backups), unless the server already has /root/.secrets/restic.env (kept; --replace-key makes
 #    a new one and deletes this server's older keys).
 # 3. /root/.secrets/restic.env on the server (0600). Nothing secret is printed or put on a command line.
-# Settings (backup.*): bucket, path (folder in the bucket, default "nv"), and where your password manager keeps
-# the secrets, as 1Password references ("op://<vault>/<item>/<field>"): b2_master_key_id, b2_master_key (the
-# account's master application key, Backblaze › App Keys), restic_password (made and saved for you if that item
-# doesn't exist yet: keep it, the backups can't be read without it), op_account (if you have several 1Password
-# accounts). A setting left empty is asked for at a no-echo prompt instead.
+# Settings (backup.*): bucket, path (folder in the bucket, default "nv"), and where the three secrets come from:
+# b2_master_key_id, b2_master_key (the account's master application key, Backblaze › App Keys), restic_password.
+# Any password manager works. Each is one of:
+#   "cmd:<command that prints it>"   e.g. "cmd:bw get password b2-master" (Bitwarden), "cmd:pass show b2/master",
+#                                    "cmd:security find-generic-password -w -s b2-master" (macOS Keychain)
+#   "op://<vault>/<item>/<field>"    1Password (op_account: which account, if you have several); for
+#                                    restic_password the item is created with a new password if it doesn't exist
+#   empty                            asked at a hidden prompt; for restic_password, Enter makes one and shows it
+#                                    once for you to save
+# Keep the restic password: the backups can't be read without it.
 exec python3 -I - "$@" <<'PY'
 import base64, getpass, json, os, subprocess, sys, urllib.error, urllib.request
 
@@ -25,8 +30,26 @@ OPENV = {**os.environ, **({"OP_ACCOUNT": E("BACKUP_OP_ACCOUNT")} if E("BACKUP_OP
 
 def secret(setting, label, create=False):
     ref = E("BACKUP_" + setting.upper())
+    if ref.startswith("cmd:"):   # any password manager's CLI: the command prints the secret
+        r = subprocess.run(ref[4:], shell=True, capture_output=True, text=True)
+        if r.returncode or not r.stdout.strip():
+            sys.exit(f"backup.{setting}: the command failed: {r.stderr.strip()[:200]}")
+        return r.stdout.strip()
     if not ref.startswith("op://"):
-        return getpass.getpass(f"{label} (backup.{setting} is not set; typing is hidden): ").strip() or sys.exit("empty")
+        hint = " (Enter: make one)" if create else ""
+        v = getpass.getpass(f"{label}{hint} (backup.{setting} is not set; typing is hidden): ").strip()
+        if v or not create:
+            return v or sys.exit("empty")
+        if DRY:
+            print("would: make a new restic password and show it once"); return "<new>"
+        import secrets
+        v = secrets.token_urlsafe(30)
+        print(f"\nNew restic password, shown once. Save it in your password manager NOW: without it the backups\n"
+              f"can't be read, by anyone.\n\n    {v}\n")
+        while input("Type its last 4 characters to confirm you saved it: ").strip() != v[-4:]:
+            print("doesn't match: check what you saved")
+        print("\033[8A\033[J", end="")   # clear the password from the screen
+        return v
     r = subprocess.run(["op", "read", ref], capture_output=True, text=True, env=OPENV)
     if r.returncode == 0 and r.stdout.strip():
         return r.stdout.strip()
