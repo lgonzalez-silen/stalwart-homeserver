@@ -24,12 +24,18 @@ D("example.com", REG_NONE, DnsProvider(DSP),
     // The server itself. On Cloudflare keep these DNS-only (no orange cloud): mail ports can't be proxied.
     A("mail", IPV4),
     AAAA("mail", IPV6),
+    A("rc.mail", IPV4),                      // webmail (webmail.hostname in site.json)
+    AAAA("rc.mail", IPV6),
 
+    // !! MX, SPF and DMARC decide where mail goes and who may send it. If this domain already has mail somewhere
+    // !! else, keep its CURRENT records here until you move the mail (README, First build, step 8): these new ones
+    // !! would send incoming mail to a server with no accounts yet, and make the old provider's mail fail checks.
     // Receiving
     MX("@", 10, SERVER),
 
     // Sending: SPF (only the MX may send), DKIM (from Stalwart), DMARC (reject what fails, reports to you)
     TXT("@", "v=spf1 mx -all"),
+    // the selector names too (the part before ._domainkey) come from Stalwart's DNS records page: replace both
     TXT("v1-ed25519-20260101._domainkey", "v=DKIM1; k=ed25519; h=sha256; p=REPLACE_FROM_STALWART"),
     TXT("v1-rsa-20260101._domainkey", "v=DKIM1; k=rsa; h=sha256; p=REPLACE_FROM_STALWART"),
     TXT("_dmarc", "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:postmaster@example.com"),

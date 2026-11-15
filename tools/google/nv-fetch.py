@@ -28,6 +28,9 @@ HOST = SITE["server"]["hostname"]
 # (e.g. one Google account -> another) as Inbox+Sent. Copies of mail they sent themselves are then caught by the
 # Message-ID check.
 POLL = 60                      # seconds between checks
+# Gmail Chat history: only these exact labels (a user label like "Snapchat" or "Chats with Mom" is ordinary mail)
+CHAT = {"\\chats", "chats", "[gmail]/chats"}
+MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()   # IMAP dates are English, whatever the locale
 STATE = "/var/lib/nv-fetch/state.db"
 
 def log(src, *a): print(f"[{src}]", *a, flush=True)
@@ -139,12 +142,25 @@ class Source:
     def one_pass(self, c):
         if self.imap is None: self.connect()
         uv, nxt = self.examine()
-        row = c.execute("select uidvalidity, last_uid from mark where src=?", (self.name,)).fetchone()
-        if row is None or row[0] != uv:
-            # first run (or Google reset UIDs): start from now, fetch nothing older. Dedupe protects a UIDVALIDITY reset.
-            c.execute("insert or replace into mark values (?,?,?,?)", (self.name, uv, nxt - 1, datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")))
+        row = c.execute("select uidvalidity, last_uid, started from mark where src=?", (self.name,)).fetchone()
+        if row is None:
+            # first run: start from now, fetch nothing older
+            c.execute("insert or replace into mark values (?,?,?,?)", (self.name, uv, nxt - 1, now()))
             c.commit(); log(self.name, f"watermark set at UID {nxt-1} (uidvalidity {uv}); only newer mail will be fetched")
             return 0
+        if row[0] != uv:
+            # Google renumbered All Mail (UIDVALIDITY changed): the old mark means nothing now. Look again at everything
+            # since 2 days before the last good check (the pull may have been failing for a while), so nothing waiting
+            # is skipped; messages already delivered are recognized by Message-ID (done table + server index).
+            ok = c.execute("select ok_at from pass where src=?", (self.name,)).fetchone()
+            since = (datetime.datetime.fromisoformat(ok[0]) if ok and ok[0] else datetime.datetime.now(datetime.timezone.utc)) - datetime.timedelta(days=2)
+            typ, d = self.imap.uid("SEARCH", "SINCE", f"{since.day}-{MONTHS[since.month-1]}-{since.year}")
+            if typ != "OK": raise RuntimeError(f"UID SEARCH SINCE failed after a UIDVALIDITY change ({typ})")
+            found = sorted(map(int, d[0].split())) if d and d[0] else []
+            start = found[0] - 1 if found else nxt - 1
+            c.execute("insert or replace into mark values (?,?,?,?)", (self.name, uv, start, row[2] or now()))
+            c.commit(); log(self.name, f"Google renumbered All Mail (uidvalidity {row[0]} -> {uv}): re-checking {len(found)} message(s) since {since:%Y-%m-%d}")
+            row = (uv, start)
         last = row[1]
         if nxt - 1 <= last: return 0
         # Which new messages to pull: list EVERY uid above the mark (the mailbox's own index, complete), read each
@@ -225,7 +241,7 @@ class Source:
             if u not in labels:   # still nothing: an error (counted, alerted after ~10), never a silent stop
                 raise RuntimeError(f"no labels for uid {u} in Gmail's reply; can't decide it, not moving past it")
             names, fl = labels[u]
-            if not ("\\Draft" in fl or "\\Draft" in names or any("chat" in x.lower() for x in names)) \
+            if not ("\\Draft" in fl or "\\Draft" in names or any(x.lower() in CHAT for x in names)) \
                     and ("\\Inbox" in names or "\\Sent" not in names):
                 todo.append(u)
             decided = u

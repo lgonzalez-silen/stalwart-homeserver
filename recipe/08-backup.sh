@@ -2,7 +2,8 @@
 # recipe/08-backup.sh — nightly encrypted backups of the server's DATA to Backblaze B2 with restic.
 # Run from your computer:  ./nv run recipe/08-backup.sh
 # Settings: alerts.to (address that receives alerts), alerts.from (sender shown on alerts),
-# alerts.account (Stalwart account id that owns alerts.to; alerts are put straight into its Inbox).
+# alerts.account (Stalwart account id that owns alerts.to; alerts are put straight into its Inbox). Create that
+# account in the WebUI first; to list account ids see tools/google/README.md ("account").
 #
 # Design: two places only (server + B2). Data only, no /etc and no secrets: everything else is
 # rebuilt by the recipes. Backed up:
@@ -15,11 +16,19 @@
 # "hidden files deleted after 30 days"; an application key that is bucket-only with list/read/write but
 # NO deleteFiles (restic hides instead of deleting, so an attacker with root on the server can't destroy
 # history for 30 days). B2's web form can't make that key ("Read and Write" includes deleteFiles); use its CLI:
-#   b2 account authorize                      (master key, on your computer)
+# These are the owner's commands, in their own terminal (the key secret is printed once: straight into the password manager):
+#   b2 account authorize                      (master key, on your computer; the b2 CLI: brew install b2-tools)
+#   b2 bucket create --lifecycle-rule '{"daysFromHidingToDeleting": 30, "daysFromUploadingToHiding": null, "fileNamePrefix": ""}' <bucket> allPrivate
 #   b2 key create --bucket <bucket> nv-restic listBuckets,listFiles,readFiles,writeFiles
 # This recipe checks the key's permissions every run and stops if it can do more than list/read/write files.
-# Secrets: /root/.secrets/restic.env (RESTIC_REPOSITORY, RESTIC_PASSWORD, B2_ACCOUNT_ID/KEY), mode 0600;
-# keep a copy in your password manager. Without RESTIC_PASSWORD the backups are unreadable.
+# Secrets: /root/.secrets/restic.env, mode 0600; keep a copy in your password manager. Without RESTIC_PASSWORD the
+# backups are unreadable. Four lines:
+#   RESTIC_REPOSITORY=b2:<bucket>:nv
+#   RESTIC_PASSWORD=<long random, e.g. from: openssl rand -base64 30>
+#   B2_ACCOUNT_ID=<the new key's keyID>
+#   B2_ACCOUNT_KEY=<the new key's applicationKey>
+# Put it on the server from your own terminal: ssh root@<server> 'umask 077; cat > /root/.secrets/restic.env', paste
+# the four lines, then Ctrl-D.
 
 RESTIC_VER=0.19.1
 RESTIC_SIGNER=CF8F18F2844575973F79D4E191A6868BD3F7A907   # restic.net/gpg-key-alex.asc

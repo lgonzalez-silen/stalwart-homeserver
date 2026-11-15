@@ -8,6 +8,9 @@
 # Moving to Trash = Google deletes it for good after 30 days, so a mistake can be undone for a month (Trash -> Inbox).
 # Sources without keep_days are never touched. Nothing on the server is changed. Every message moved is recorded in
 # state.db (table google_trim).
+# A source is trimmed for real only after a --dry run of it at the SAME keep_days (recorded in google_trim_dry): the
+# first weekly run after setting or changing keep_days fails with a message instead (and the alert says what to do).
+# Read the dry run's numbers before letting the weekly run go ahead.
 # usage: nv-google-trim [--dry] [src ...]   (--dry: report only, change nothing; default: all sources with keep_days)
 #        nv-google-trim --max N              (stop after N moves per source in this run; default 50000)
 import sys, os, time, json, re, imaplib, email, email.policy, datetime, sqlite3, urllib.request
@@ -56,7 +59,10 @@ def trim(src, user, acct, KEEP_DAYS, c):
     go = go[:MAX]
     print(f"[{src}] older than {cutoff}: {len(uids)} | on server -> Trash: {len(go)} ({size_go/1e9:.2f} GB) | "
           f"not on server, kept: {keep} | no Message-ID, kept: {nomid}" + (" | DRY, nothing moved" if DRY else ""), flush=True)
-    if DRY: m.logout(); return
+    if DRY:
+        m.logout()
+        c.execute("insert or replace into google_trim_dry values (?,?,?)", (src, KEEP_DAYS, now())); c.commit()
+        return
     # Google sometimes answers a MOVE with "System Error" and drops the connection, often AFTER doing the move. So: move
     # 50 at a time; if a batch errors, reconnect and check which of its messages are really still in All Mail; retry
     # those one by one. A message still there after its own retry is left at Google and remembered in
@@ -97,5 +103,13 @@ if __name__ == "__main__":
     c = sqlite3.connect(STATE, timeout=30)
     c.execute("create table if not exists google_trim (src text, key text, uid int, at text, primary key (src, key))")
     c.execute("create table if not exists google_trim_skip (src text, key text, at text, primary key (src, key))")
+    c.execute("create table if not exists google_trim_dry (src text primary key, keep_days int, at text)")
+    blocked = []
     for src in ARGS or list(SOURCES):
+        seen = c.execute("select keep_days from google_trim_dry where src=?", (src,)).fetchone()
+        if not DRY and (seen is None or seen[0] != SOURCES[src][2]):
+            print(f"[{src}] not trimmed: no dry run yet at keep_days={SOURCES[src][2]}. On the server run "
+                  f"'nv-google-trim --dry {src}', check what it would move, then the next run trims for real.", flush=True)
+            blocked.append(src); continue
         trim(src, *SOURCES[src], c)
+    if blocked: sys.exit(f"waiting for a dry run: {', '.join(blocked)}")

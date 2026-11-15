@@ -21,6 +21,11 @@
 #   - Allowed IPs (auto-ban exemptions): 127.0.0.1, ::1 and the server's own IPv4 + IPv6 (Roundcube's SMTP comes
 #     from the server's public address, so failed webmail sends must not ban the server itself)
 #   - Telemetry › file tracer: ansi off (otherwise the logs are full of color codes)
+#   - Domains › DKIM: management Manual (the default rotates keys every 90 days under selectors your DNS lacks)
+#   - Spam filter › Pyzor: on. It sends a fingerprint (a hash, not the content) of each incoming message to
+#     public.pyzor.org to ask whether others reported it as spam. To keep that off, remove the SpamPyzor line below.
+#   - Security: auto-ban after 30 failed logins a day (default 100), bans expire; Message-ID/Date added when missing
+#     on every port; message size limit; MTA-STS policy lists every MX; outgoing DMARC/TLS reports off (see below)
 #   - Admin account: TOTP two-factor, by hand (recipe/03-stalwart-admin.md)
 
 KEYFILE=/root/.secrets/laptop-api.key

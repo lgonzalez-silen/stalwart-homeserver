@@ -32,9 +32,9 @@ echo "== weekly release check"
 install -d -m 700 /var/lib/nv-release-check
 put /usr/local/sbin/nv-release-check 700 <<'EOF'
 #!/usr/bin/python3 -I
-# nv-release-check: mail once when upstream has a newer version than what's installed. Silent otherwise.
+# nv-release-check: note which upstream versions are newer than what's installed, for the dashboard (no mail).
 # State: /var/lib/nv-release-check/notified (one "name version" per line already reported).
-# usage: nv-release-check [--dry]   (--dry: print what it sees, mail nothing, remember nothing)
+# usage: nv-release-check [--dry]   (--dry: print what it sees, remember nothing)
 import json, os, re, subprocess, sys, urllib.request
 STATE = "/var/lib/nv-release-check/notified"
 DRY = "--dry" in sys.argv
@@ -93,7 +93,7 @@ EOF
 chmod 700 /usr/local/sbin/nv-release-check
 put /etc/systemd/system/nv-release-check.service <<'EOF'
 [Unit]
-Description=Weekly check for newer Stalwart/Roundcube/identity_smtp/restic releases (mails once per version)
+Description=Weekly check for newer Stalwart/Roundcube/identity_smtp/restic releases (shown on the dashboard)
 After=network-online.target
 Wants=network-online.target
 OnFailure=nv-alert@%n.service

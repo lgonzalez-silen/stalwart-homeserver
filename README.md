@@ -100,27 +100,42 @@ gets it too.
 
 ## First build
 
-Order matters. Each recipe's header says what it needs and what to check afterwards.
+Order matters. Each recipe's header says what it needs and what to check afterwards. Steps marked **(you)** are
+yours to do, not your agent's: they need your accounts, your password manager or your eyes.
 
-1. **Provider panel:** AlmaLinux 10 image with your SSH key; PTR records for both IPs → your server name; the
-   provider firewall (if any) allowing TCP 22, 25, 80, 443, 465, 587, 993.
-2. **DNS:** A/AAAA for the server name, a wildcard under it for webmail, and for every mail domain the helper
-   CNAMEs (`mta-sts`, `autoconfig`, `autodiscover`, `ua-auto-config` → the server): recipe 06 needs them for its
-   certificate. Copy [`dns/dnsconfig.example.js`](dns/dnsconfig.example.js) and fill in your values; the rest of the
-   mail records (MX, SPF, DKIM, ...) come in step 6.
-3. `cp site.example.json site.json` and fill it in (reference below).
+0. **Your site repo (you + agent):** create the private repo or folder described above, with `site.json`,
+   `dns/`, `STATUS.md` and `DECISIONS.md`, and run every command with `--site` pointing at it. Nothing about your
+   server goes into this repo.
+1. **Provider panel (you):** AlmaLinux 10 image with your SSH key; PTR records for both IPs → your server name; the
+   provider firewall (if any) allowing TCP 22, 25, 80, 443, 465, 587, 993. Many providers unblock outgoing port 25
+   only on request (a support ticket). Then, from your own terminal, connect once (`ssh root@<server ip>`) and check
+   that the fingerprint it shows matches the one in the provider's console before you accept it.
+2. **DNS, the names only:** A/AAAA for the server name and for the webmail name (`webmail.hostname`, e.g.
+   `rc.mail.example.com`), and for every mail domain the helper CNAMEs (`mta-sts`, `autoconfig`, `autodiscover`,
+   `ua-auto-config` → the server): recipe 06 needs them for its certificate. Copy
+   [`dns/dnsconfig.example.js`](dns/dnsconfig.example.js) and fill in your values. **If a domain already receives
+   mail somewhere else, leave its MX, SPF and DMARC records as they are:** changing them moves your mail to a server
+   that has no accounts yet. They change in step 8.
+3. `cp site.example.json <your site repo>/site.json` and fill it in (reference below).
 4. In this order: `./nv run recipe/01-base.sh` (reboot if it says so), `02-certs.sh`, `03-stalwart.sh` (installs
    Stalwart and does its first setup, no wizard), `04-nginx.sh` (installs nginx, doesn't start it),
-   `05-stalwart-settings.sh` (settings, and the switch of port 443 from Stalwart to nginx). Then the two steps by
-   hand: save the admin password and turn on two-factor ([`recipe/03-stalwart-admin.md`](recipe/03-stalwart-admin.md)).
-   Then `06-mail-domain-certs.sh`, `07-roundcube.sh`.
-5. Backups and operations: `08-backup.sh` (create the B2 bucket and key first, see its header), then `09-ops.sh`.
-   **Test a restore** ([`docs/restore.md`](docs/restore.md)) before you move real mail in.
-6. **Mail DNS** for each domain: MX, SPF, DKIM (values from Stalwart's WebUI), DMARC, MTA-STS and TLS-RPT TXT
-   records, the SRV records and `_ua-auto-config`, then DNSSEC. Checklist and tests: [`docs/deliverability.md`](docs/deliverability.md).
-7. Accounts in Stalwart's WebUI; passwords with `nv-set-password` ([operations guide](docs/operations.md)).
-   Optional: `10-websites.sh`, `11-google.sh`, `07b-roundcube-skin.sh`.
-8. Move mail in ([`tools/migrate/`](tools/migrate/README.md)), then switch your MX records.
+   `05-stalwart-settings.sh` (settings, and the switch of port 443 from Stalwart to nginx). Recipe 01 changes SSH and
+   the firewall: after it, and after its reboot, test a fresh login in a separate terminal
+   (`ssh -o ControlMaster=no -o ControlPath=none root@<server> true`) before going on.
+   Then **(you)** save the admin password and turn on two-factor
+   ([`recipe/03-stalwart-admin.md`](recipe/03-stalwart-admin.md)). Then `06-mail-domain-certs.sh`, `07-roundcube.sh`.
+5. Backups and operations. **(you)** First, in Stalwart's WebUI, create the account that will receive alerts
+   (`alerts.to`) and put its id in `alerts.account` (how to find it: [`tools/google/README.md`](tools/google/README.md),
+   "account"). **(you)** Create the B2 bucket, its key and `restic.env` (recipe 08's header). Then `08-backup.sh` and
+   `09-ops.sh`. **Test a restore** ([`docs/restore.md`](docs/restore.md), "Test a restore") before you move real mail in.
+6. **Mail DNS** for each domain: DKIM (values from Stalwart's WebUI, Domains › DNS records: they're public, so they
+   can be pasted into a chat), MTA-STS and TLS-RPT TXT records, the SRV records and `_ua-auto-config`, then
+   **(you)** DNSSEC. MX, SPF and DMARC too, but only for a domain that has no mail anywhere yet. Checklist and tests:
+   [`docs/deliverability.md`](docs/deliverability.md).
+7. **(you)** Accounts in Stalwart's WebUI; passwords with `nv-set-password` ([operations guide](docs/operations.md)).
+   Optional: `10-websites.sh`, `11-google.sh`, and the skin with `./nv sh recipe/07b-roundcube-skin.sh`.
+8. Move mail in ([`tools/migrate/`](tools/migrate/README.md)), then switch each domain's MX, SPF and DMARC to the new
+   server, and keep the old provider until mail has arrived on the new one for a few days.
 
 ## `site.json` reference
 
@@ -134,19 +149,20 @@ Order matters. Each recipe's header says what it needs and what to check afterwa
 | `mail.mx_hosts` | every MX hostname your domains use (listed in the MTA-STS policy) |
 | `mail.default_domain` | optional: Stalwart's default domain, if it isn't the hostname without its first label |
 | `mail.max_message_mb` | largest message accepted (default 25, like Gmail; Roundcube attachments ~3/4 of it) |
-| `admin.allow` | optional IPs/CIDRs allowed to open the WebUI at `/admin` (the admin account has TOTP either way) |
+| `admin.allow` | optional IPs/CIDRs allowed to open the WebUI at `/admin`. Empty: open to the internet, protected by the admin password and two-factor (once you've turned it on: `recipe/03-stalwart-admin.md`) |
 | `webmail.hostname`, `product_name` | Roundcube's address and the name on its login page |
 | `webmail.local_plugins`, `local_skins`, `compact_skin_source` | the optional skin and its plugins (recipe 07b) |
 | `alerts.to`, `from`, `account` | who gets alerts, the sender shown, and the Stalwart account id of `to` |
 | `websites[]` | `name`, `cert` (`dns` or `http`), `source` (folder on your computer), `webmail_redirect` |
 | `google.sources[]` | `name`, `user`, `account`, `own`, optional `enabled`, `spam_mirror`, `keep_days` ([details](tools/google/README.md)) |
-| `junk_report.detail_accounts`, `keep_days` | accounts whose Junk is listed message by message, and pruned |
+| `junk_report.detail_accounts`, `keep_days` | accounts whose Junk is listed message by message, and whose Junk older than `keep_days` is deleted for good |
 
 ## Running it
 
 Most days you do nothing: updates, backups, certificate renewals and checks run on timers. `./nv status` shows
 everything that could need attention in one place (with `--html`, a local page with trend lines), and you get mail
-only when something needs action soon. The [operations guide](docs/operations.md) covers what runs when, what each alert means,
+only when something needs action soon. Alerts are sent by the server itself, so a server that is completely down
+can't tell you: look at `./nv status` now and then, or point a free outside uptime monitor at `https://<server>/`. The [operations guide](docs/operations.md) covers what runs when, what each alert means,
 everyday tasks (users, passwords, domains), upgrades and restores. [`docs/stalwart-notes.md`](docs/stalwart-notes.md)
 collects Stalwart behaviour worth knowing.
 

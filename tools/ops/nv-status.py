@@ -260,7 +260,8 @@ def main():
         if bad != was_bad and not PRINT:
             subject = f"{'ATTENTION' if bad else 'recovered'}: {k['title']}"
             body = f"{k['title']}: {k['summary']}\n\nAll checks: ./nv status (on your computer)\n"
-            subprocess.run(["/usr/local/sbin/nv-alert", subject], input=body.encode())
+            if subprocess.run(["/usr/local/sbin/nv-alert", subject], input=body.encode()).returncode != 0:
+                continue   # not delivered (Stalwart itself may be down): leave it unmarked, so the next run tries again
         if not PRINT:   # a --print run looks only; it must not mark anything as already alerted
             db.execute("insert or replace into alerted values (?,?,?)", (k["id"], "crit" if bad else "ok", ts))
     db.commit()

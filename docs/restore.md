@@ -22,15 +22,18 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
    admin account keeps its password and two-factor.
 2. Stop the services that use the data: `ssh root@<server> 'systemctl stop stalwart php-fpm'`
 3. Put `/root/.secrets/restic.env` back (mode 0600, fields from your password manager), then run recipe 08. It
-   installs restic and the timers, and it won't re-create an existing repository.
+   installs restic and the timers, and it won't re-create an existing repository. **Then stop the nightly backup
+   until the restore is done:** `ssh root@<server> systemctl stop nv-backup.timer`. Otherwise a run in between saves
+   the empty new server as the newest snapshot (and "latest" would then restore nothing).
 4. Restore, on the server:
 
    ```sh
    set -a; . /root/.secrets/restic.env; set +a
-   restic snapshots --compact | tail -5          # pick one; "latest" is last night
-   restic restore latest --target /var/tmp/r
+   restic snapshots --compact | tail -5          # pick one BY ITS ID: check its date and size are the old server's
+   restic restore <snapshot-id> --target /var/tmp/r
    mv /var/lib/stalwart /var/lib/stalwart-empty
    mv /var/tmp/r/var/lib/stalwart-snap /var/lib/stalwart && chown -R stalwart:stalwart /var/lib/stalwart
+   rm -f /var/lib/roundcube/roundcube.db-wal /var/lib/roundcube/roundcube.db-shm   # the fresh DB's journal, not ours
    install -o nginx -g nginx -m 640 /var/tmp/r/var/backups/nv/roundcube.db /var/lib/roundcube/roundcube.db
    # Google module only: where each pull stopped, so mail since the backup is still fetched.
    # (recipe 11 must have run first; if this says "not found", run it, then repeat these three lines)
@@ -53,7 +56,7 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
      API Keys) if you no longer have it.
    - SSH host keys are new: on your computer, `ssh-keygen -R <server>` and accept the new fingerprint once.
 6. Check: log in to webmail, send and receive a test message, open a few old folders, and
-   `systemctl list-timers 'nv-backup*'`, and (Google module) `systemctl start nv-fetch nv-spam-mirror.timer nv-google-trim.timer`. Delete `/var/lib/stalwart-empty` and `/var/tmp/r` when you're happy.
+   start the nightly backup again (`systemctl start nv-backup.timer`, then `systemctl list-timers 'nv-backup*'`), and (Google module) `systemctl start nv-fetch nv-spam-mirror.timer nv-google-trim.timer`. Delete `/var/lib/stalwart-empty` and `/var/tmp/r` when you're happy.
 
 ## One mailbox, or a few messages
 
@@ -72,8 +75,10 @@ into the live one. Stop the scratch server and delete `/var/tmp/r` afterwards.
 
 ## Test a restore
 
-After the first build, and again after big changes: do the "one mailbox" steps without copying anything out, and
-compare the scratch server's message and folder counts with the live server's. A backup you've never restored is a
+After the first build, and again after big changes. On a new server there's no backup until the first nightly run
+(03:15 UTC): make one now with `ssh root@<server> 'systemctl start nv-backup && journalctl -u nv-backup -n 5'`.
+Then do the "one mailbox" steps without copying anything out, and compare the scratch server's message and folder
+counts with the live server's (in the WebUI, or ask your agent to count both through the API). A backup you've never restored is a
 hope, not a backup.
 
 ## If a backup ever leaked

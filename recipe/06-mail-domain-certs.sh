@@ -51,10 +51,16 @@ server {
     ssl_certificate     $LIVE/fullchain.pem;
     ssl_certificate_key $LIVE/privkey.pem;
     limit_req zone=perip burst=50 nodelay;
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        include /etc/nginx/stalwart_proxy.conf;
-    }
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    # Only what mail apps and other mail servers ask these names for (Stalwart's routes for them): MTA-STS policy,
+    # ua-auto-config, Thunderbird autoconfig, Outlook autodiscover. Anything else (the admin console, the login and
+    # token endpoints) is not reachable through these names, so admin.allow and the login rate limit can't be bypassed.
+    location = /.well-known/mta-sts.txt                       { proxy_pass http://127.0.0.1:8080; include /etc/nginx/stalwart_proxy.conf; }
+    location = /.well-known/user-agent-configuration.json     { proxy_pass http://127.0.0.1:8080; include /etc/nginx/stalwart_proxy.conf; }
+    location = /.well-known/autoconfig/mail/config-v1.1.xml   { proxy_pass http://127.0.0.1:8080; include /etc/nginx/stalwart_proxy.conf; }
+    location = /mail/config-v1.1.xml                          { proxy_pass http://127.0.0.1:8080; include /etc/nginx/stalwart_proxy.conf; }
+    location ~* ^/autodiscover/autodiscover\.(xml|json)       { proxy_pass http://127.0.0.1:8080; include /etc/nginx/stalwart_proxy.conf; }
+    location / { return 404; }
 }
 EOF
 nginx_apply reload
@@ -63,4 +69,8 @@ echo "== checks"
 for d in "${MAIL_DOMAINS[@]}"; do
   printf '%s mta-sts.txt: ' "$d"; curl -s --max-time 10 "https://mta-sts.$d/.well-known/mta-sts.txt" | tr '\n' ' '; echo
   printf '%s autoconfig: ' "$d"; curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 "https://autoconfig.$d/mail/config-v1.1.xml?emailaddress=test@$d"
+  printf '%s ua-auto-config: ' "$d"; curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 "https://ua-auto-config.$d/.well-known/user-agent-configuration.json"
+  live || continue
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://autoconfig.$d/admin")
+  [ "$code" = 404 ] || { echo "autoconfig.$d/admin answered HTTP $code, expected 404: the helper names must not reach the admin console"; exit 1; }
 done

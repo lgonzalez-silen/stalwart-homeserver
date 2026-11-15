@@ -60,6 +60,14 @@ account's Trash, but only messages whose Message-ID is somewhere on your server.
 days, so a mistake can be undone for a month. Messages without a Message-ID, Spam, Drafts and Chats are never
 touched. Accounts without `keep_days` are never touched.
 
+**Nothing is trimmed until you've seen a dry run.** After you set `keep_days` (or change it), the weekly run refuses
+that source and the alert tells you to run `ssh root@<server> nv-google-trim --dry <source>`. Read its numbers (how
+many messages, how many GB would go to Trash); if they look right, the next weekly run trims for real.
+
+One known weakness: "on your server" is judged by Message-ID alone. Someone who knows a Message-ID from an old thread
+could send a message with the same ID; if it lands outside Junk, the real Google copy of that message would be
+trimmed (and recoverable from Google's Trash for 30 days). Keep `keep_days` generous.
+
 ## Setup
 
 1. For each Google account, create an **app password** (Google Account → Security → 2-Step Verification → App

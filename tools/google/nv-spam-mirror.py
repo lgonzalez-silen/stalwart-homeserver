@@ -13,7 +13,7 @@
 import sys, os, subprocess, json, re, sqlite3, imaplib, datetime, email, email.policy, urllib.request
 
 sys.path.insert(0, "/usr/local/lib/nv"); sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))  # repo copy last
-from nvlib import jmap, upload, mid, imap_safe, message_ids, gmail_folders, site, ADMIN  # noqa: E402
+from nvlib import jmap, upload, mid, imap_safe, printable, message_ids, gmail_folders, site, ADMIN  # noqa: E402
 SITE = site()   # installed by recipe/09-ops.sh
 GROUPS = {}   # target Stalwart account -> Google sources feeding its "Google Spam" folder (google.sources[] in site.json)
 for s in SITE["google"]["sources"]:
@@ -24,7 +24,7 @@ STATE = "/var/lib/nv-fetch/state.db"
 DRY = "--dry" in sys.argv
 now = lambda: datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
-def say(*a): print(("DRY " if DRY else "") + " ".join(map(str, a)), flush=True)
+def say(*a): print(("DRY " if DRY else "") + printable(" ".join(map(str, a))), flush=True)   # Message-IDs come from strangers
 
 def mid_of(raw):
     m = email.message_from_bytes(raw, policy=email.policy.compat32)
@@ -47,15 +47,24 @@ class Google:
         typ, d = self.m.uid("SEARCH", "ALL")
         if typ != "OK": raise RuntimeError(f"{self.src}: Spam search failed ({typ}: {d})")
         uids = d[0].split() if d and d[0] else []
-        out = {}; self.gm = {}
-        for i in range(0, len(uids), 200):
-            typ, d = self.m.uid("FETCH", b",".join(uids[i:i+200]).decode(), "(X-GM-MSGID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
-            if typ != "OK": raise RuntimeError(f"{self.src}: Spam fetch failed ({typ})")
+        out = {}; self.gm = {}; got = set()
+        def read(d):
             for p in d:
                 if not isinstance(p, tuple): continue
                 uid = int(re.search(rb"UID (\d+)", p[0]).group(1)); gm = re.search(rb"X-GM-MSGID (\d+)", p[0]).group(1).decode()
                 k = mid_of(p[1]) or f"gm:{gm}"
-                out[k] = uid; self.gm[k] = gm
+                out[k] = uid; self.gm[k] = gm; got.add(uid)
+        what = "(X-GM-MSGID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])"
+        for i in range(0, len(uids), 200):
+            typ, d = self.m.uid("FETCH", b",".join(uids[i:i+200]).decode(), what)
+            if typ != "OK": raise RuntimeError(f"{self.src}: Spam fetch failed ({typ})")
+            read(d)
+        # Gmail's batch FETCH can leave messages out. One missing here would read as "Google dropped it" and remove
+        # the server copy: ask for each missing one alone, and stop if any is still missing.
+        for u in [u for u in map(int, uids) if u not in got]:
+            typ, d = self.m.uid("FETCH", str(u), what)
+            if typ == "OK": read(d)
+            if u not in got: raise RuntimeError(f"{self.src}: Spam uid {u} listed but not returned by FETCH; not deciding anything this run")
         return out
 
     def body(self, uid):
@@ -92,19 +101,31 @@ class Google:
         # second, independent check (Gmail's X-GM-RAW search can lag): a plain IMAP header search in All Mail
         typ, d = self.m.uid("SEARCH", "HEADER", "Message-ID", key)
         if typ != "OK": raise RuntimeError(f"{self.src}: All Mail header search failed ({typ})")
-        return bool(d and d[0])
+        hits = d[0].split() if d and d[0] else []
+        # IMAP HEADER search matches substrings (a spammer's Message-ID "<a>" would match much real mail): compare exactly
+        for i in range(0, len(hits), 200):
+            typ, d = self.m.uid("FETCH", b",".join(hits[i:i+200]).decode(), "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
+            if typ != "OK": raise RuntimeError(f"{self.src}: All Mail fetch failed ({typ})")
+            if any(isinstance(p, tuple) and mid_of(p[1]) == key for p in d): return True
+        return False
 
-def mailbox_ids(acct):
+def mailbox_ids(acct, mirrored=0):
     boxes = jmap([["Mailbox/get", {"accountId": acct, "properties": ["name", "role", "parentId"]}, "m"]])[0][1]["list"]
     role = {b.get("role"): b["id"] for b in boxes if b.get("role")}
     folder = next((b["id"] for b in boxes if b["name"] == FOLDER and not b.get("parentId")), None)
+    if folder is None and mirrored:
+        # Renamed or deleted by someone: every mirrored copy would look "moved out" and be sent to Gmail's Inbox as
+        # Not spam. Stop instead: the run fails and shows on the dashboard (./nv status).
+        raise RuntimeError(f"[{acct}] the '{FOLDER}' folder is gone but {mirrored} messages are recorded as mirrored into it: "
+                           f"rename it back (top level, exactly '{FOLDER}'). Nothing was changed.")
     if folder is None and not DRY:
         r = jmap([["Mailbox/set", {"accountId": acct, "create": {"f": {"name": FOLDER, "parentId": None}}}, "c"]])[0][1]
         folder = r["created"]["f"]["id"]; say(f"[{acct}] created folder '{FOLDER}'")
     return folder, role
 
 def sync(acct, sources, c):
-    folder, role = mailbox_ids(acct)
+    nmirrored = c.execute("select count(*) from spam_mirror where acct=? and status='mirrored'", (acct,)).fetchone()[0]
+    folder, role = mailbox_ids(acct, nmirrored)
     # Mirror rows don't record their source. If any of this account's Google sources is paused (enabled: false or
     # spam_mirror: false), its spam isn't looked at, so "no longer at Google" can't be told apart from "not checked":
     # skip the expire/rescue step for the account (copies stay put) rather than delete anything.
