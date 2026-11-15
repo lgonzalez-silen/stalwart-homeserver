@@ -32,7 +32,7 @@ fixed, use `mbox2maildir.py` first).
 | `cmpacct.py` | Per-folder message counts: the Stalwart account vs `manifest.tsv`. Counts only. |
 | `delta-import.py` | Route D: imports only messages whose Message-ID isn't in the account yet. `--since=` skips mail the user already dealt with on the new server. Dry run unless `--apply`. |
 | `rc-old-identities.py` | Old Roundcube identities (names, addresses, signatures) from a MySQL dump, as JSON. |
-| `rc-port-user.php` | Puts those identities into the new Roundcube before the user's first login. Per-identity outgoing servers go through the `identity_smtp` plugin. |
+| `rc-port-user.php` | Puts those identities into the new Roundcube before the user's first login. Per-identity outgoing servers go through the `identity_smtp` plugin: set `webmail.identity_smtp: true` first (recipe 07). |
 | `rc-apply-identities.php` | Same for a user who has already logged in, plus a few display preferences. |
 | `rc-smtp-password.php` | Sets an identity's outgoing-server password, typed without echo, and tests the login. |
 

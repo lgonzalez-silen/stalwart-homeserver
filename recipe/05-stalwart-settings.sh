@@ -10,6 +10,7 @@
 # Settings: mail.mx_hosts (every MX name your domains use; listed in the MTA-STS policy).
 #           mail.max_message_mb (largest message accepted, default 25 like Gmail; Stalwart's default is 100).
 #           Large files belong in shared links: on a personal server every big message is a real share of the disk.
+#           mail.pyzor (optional, default false): ask public.pyzor.org about each incoming message (see below).
 #
 # What this setup changes from Stalwart's defaults, and where (WebUI names, to check or redo by hand):
 #   - First setup (recipe/03): default domain, ACME off, DKIM keys on, manual DNS; admin account; the API key
@@ -22,8 +23,9 @@
 #     from the server's public address, so failed webmail sends must not ban the server itself)
 #   - Telemetry › file tracer: ansi off (otherwise the logs are full of color codes)
 #   - Domains › DKIM: management Manual (the default rotates keys every 90 days under selectors your DNS lacks)
-#   - Spam filter › Pyzor: on. It sends a fingerprint (a hash, not the content) of each incoming message to
-#     public.pyzor.org to ask whether others reported it as spam. To keep that off, remove the SpamPyzor line below.
+#   - Spam filter › Pyzor: only with mail.pyzor = true in site.json (Stalwart's default is off, and so is this
+#     setup's). On, it sends a fingerprint (a hash, not the content) of each incoming message to public.pyzor.org to
+#     ask whether others reported it as spam; a hit adds 3.5 points (spam is 7).
 #   - Security: auto-ban after 30 failed logins a day (default 100), bans expire; Message-ID/Date added when missing
 #     on every port; message size limit; MTA-STS policy lists every MX; outgoing DMARC/TLS reports off (see below)
 #   - Admin account: TOTP two-factor, by hand (recipe/03-stalwart-admin.md)
@@ -41,6 +43,7 @@ J() {   # J <json>: one JMAP request to the admin API
 live && { [ -s $KEYFILE ] || { echo "missing $KEYFILE (see header)"; exit 1; }; }
 DAY=86400000
 MAXMSG=$(( ${NV_MAIL_MAX_MESSAGE_MB:-25} * 1048576 ))
+PYZOR=false; [ "${NV_MAIL_PYZOR:-}" = yes ] && PYZOR=true
 MX_JSON=""; for h in ${NV_MAIL_MX_HOSTS:?set mail.mx_hosts in site.json}; do MX_JSON+="${MX_JSON:+,}\"$h\":true"; done
 
 if [ "${NV_SHOW:-}" != 1 ]; then
@@ -54,7 +57,7 @@ if [ "${NV_SHOW:-}" != 1 ]; then
     [\"x:Security/set\",{\"accountId\":\"b\",\"update\":{\"singleton\":{
       \"authBanRate\":{\"count\":30,\"period\":$DAY},\"authBanPeriod\":$DAY,
       \"abuseBanPeriod\":$DAY,\"loiterBanPeriod\":$DAY,\"scanBanPeriod\":$((DAY*7))}}},\"s\"],
-    [\"x:SpamPyzor/set\",{\"accountId\":\"b\",\"update\":{\"singleton\":{\"enable\":true}}},\"p\"],
+    [\"x:SpamPyzor/set\",{\"accountId\":\"b\",\"update\":{\"singleton\":{\"enable\":$PYZOR}}},\"p\"],
     [\"x:MtaStageData/set\",{\"accountId\":\"b\",\"update\":{\"singleton\":{
       \"addMessageIdHeader\":{\"match\":{},\"else\":\"true\"},\"addDateHeader\":{\"match\":{},\"else\":\"true\"},
       \"maxMessageSize\":{\"match\":{},\"else\":\"$MAXMSG\"}}}},\"d\"],

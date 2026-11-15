@@ -12,7 +12,8 @@
   "mail": {
     "helper_domains": ["example.com"],
     "mx_hosts": ["mail.example.com"],
-    "max_message_mb": 25
+    "max_message_mb": 25,
+    "pyzor": false
   },
   "admin": {
     "allow": []
@@ -20,6 +21,7 @@
   "webmail": {
     "hostname": "rc.mail.example.com",
     "product_name": "Example Mail",
+    "identity_smtp": false,
     "local_plugins": [],
     "local_skins": [],
     "compact_skin_source": ""

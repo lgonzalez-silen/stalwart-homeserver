@@ -47,7 +47,7 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
 5. What wasn't in the backup, on purpose:
    - TLS certificates: recipe 02 issues new ones.
    - Roundcube's `des_key`: recipe 07 makes a new one, so outgoing-server passwords saved per identity (the
-     `identity_smtp` plugin) can't be read. Re-enter them under Settings → Identities, or with
+     `identity_smtp` plugin, if you use it) can't be read. Re-enter them under Settings → Identities, or with
      `tools/migrate/rc-smtp-password.php`.
    - The tools' API key: `/root/.secrets/laptop-api.key` holds the fresh install's key, which the restored database
      doesn't know. Make a new one: `ssh root@<server> rm /root/.secrets/laptop-api.key /root/.secrets/stalwart-admin`,

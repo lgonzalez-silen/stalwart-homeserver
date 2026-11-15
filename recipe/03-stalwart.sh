@@ -15,7 +15,7 @@
 #
 # UPGRADES (procedure tested 1.0.1 -> 1.1.0, ~2 s downtime):
 #   1. Read every release's notes in between (github.com/stalwartlabs/stalwart/releases); look for
-#      "must"/"re-enable"/permission notes. A new release shows on ./nv status (weekly check, recipe/09; no mail).
+#      "must"/"re-enable"/permission notes. nv-release-check (recipe/09) mails you once when one is out.
 #   2. On the laptop: download stalwart-x86_64-unknown-linux-gnu.tar.gz for the tag, then
 #        gh attestation verify <file> --repo stalwartlabs/stalwart --format json
 #      and check the file's sha256 is among the attested subjects (built by Stalwart CI from that tag).

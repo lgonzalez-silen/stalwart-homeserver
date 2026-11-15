@@ -149,8 +149,10 @@ yours to do, not your agent's: they need your accounts, your password manager or
 | `mail.mx_hosts` | every MX hostname your domains use (listed in the MTA-STS policy) |
 | `mail.default_domain` | optional: Stalwart's default domain, if it isn't the hostname without its first label |
 | `mail.max_message_mb` | largest message accepted (default 25, like Gmail; Roundcube attachments ~3/4 of it) |
+| `mail.pyzor` | optional, default false: ask public.pyzor.org whether each incoming message is known spam (sends a hash of it, not the content; recipe 05) |
 | `admin.allow` | optional IPs/CIDRs allowed to open the WebUI at `/admin`. Empty: open to the internet, protected by the admin password and two-factor (once you've turned it on: `recipe/03-stalwart-admin.md`) |
 | `webmail.hostname`, `product_name` | Roundcube's address and the name on its login page |
+| `webmail.identity_smtp` | optional, default false: let each webmail identity send through its own outside SMTP server (third-party plugin; recipe 07) |
 | `webmail.local_plugins`, `local_skins`, `compact_skin_source` | the optional skin and its plugins (recipe 07b) |
 | `alerts.to`, `from`, `account` | who gets alerts, the sender shown, and the Stalwart account id of `to` |
 | `websites[]` | `name`, `cert` (`dns` or `http`), `source` (folder on your computer), `webmail_redirect` |

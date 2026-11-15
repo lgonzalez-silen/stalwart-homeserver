@@ -25,7 +25,7 @@ Look at it now and then (weekly is plenty), and whenever something feels off.
 | every 15 min | `nv-status`: the dashboard's checks | when a critical check turns bad or recovers (below) |
 | 13:00 daily | `nv-junk-report`: prunes Junk of `junk_report.detail_accounts` (spikes show on the dashboard) | only on failure |
 | Sun 14:00 | `nv-google-trim` (Google module, only sources with `keep_days`) | on failure, or more than 20 messages Google refuses to move (fewer are logged and skipped), or a source with no dry run yet at its `keep_days` (run `nv-google-trim --dry <source>` and check it) |
-| Mon 14:00 | `nv-release-check`: Stalwart, Roundcube, identity_smtp, restic | no mail: new versions show on the dashboard |
+| Mon 14:00 | `nv-release-check`: Stalwart, Roundcube, identity_smtp, restic | one mail per new version (also on the dashboard) |
 | 1st, 05:00 | `nv-backup-check`: verifies the backup repository and re-reads 10% of it | only if it finds a problem |
 
 A failed run of any of the timer jobs puts an alert straight into `alerts.to`'s Inbox (`OnFailure=nv-alert@...`,
@@ -87,7 +87,7 @@ If you ever have to change something by hand on the server, put it into the repo
 
 **OS:** automatic (dnf-automatic, daily, reboots when needed).
 
-**Stalwart:** when `./nv status` lists a new release (checked weekly; it doesn't mail you, so look now and then). Read every release's notes between your version and the new one
+**Stalwart:** when the weekly release check mails you (new versions also show on `./nv status`). Read every release's notes between your version and the new one
 (watch for "breaking" and migration steps). Upgrade right after the nightly backup, following the procedure in
 `recipe/03-stalwart.sh`'s header: it takes an instant copy-on-write snapshot of the data directory first, so going
 back is a rename, and the downtime is a couple of seconds.

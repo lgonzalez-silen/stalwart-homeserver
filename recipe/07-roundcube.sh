@@ -4,6 +4,10 @@
 # Settings: server.hostname, server.timezone, webmail.hostname (default rc.<server.hostname>),
 # webmail.product_name, webmail.local_plugins / webmail.local_skins (installed outside the Roundcube release,
 # e.g. by recipe/07b; enabled here and carried over on upgrades).
+# webmail.identity_smtp (optional, default false): the third-party identity_smtp plugin, which lets each identity
+# send through its own outside SMTP server (for people moving from a setup that had that). Off, nobody can make the
+# server open SMTP connections to other hosts or store outside passwords. Turning it off later disables it; the
+# outside passwords stay in the database (encrypted) until the identities are edited.
 #
 # Why its own subdomain: browser origin isolation. Stalwart's admin/OAuth lives on
 # https://<server.hostname>; Roundcube has a history of XSS bugs, so it must not share that origin.
@@ -27,7 +31,8 @@ SIGNING_KEY=5AB2BAA141C4F7D5          # roundcube.net/download (long key ID)
 HOST=${NV_WEBMAIL_HOSTNAME:-rc.$NV_SERVER_HOSTNAME}
 MAILHOST=$NV_SERVER_HOSTNAME
 TZ_PHP=${NV_SERVER_TIMEZONE:-UTC}
-PLUGINS="archive zipdownload managesieve markasjunk attachment_reminder identity_smtp identity_select ${NV_WEBMAIL_LOCAL_PLUGINS:-}"
+IDSMTP=; [ "${NV_WEBMAIL_IDENTITY_SMTP:-}" = yes ] && IDSMTP=identity_smtp
+PLUGINS="archive zipdownload managesieve markasjunk attachment_reminder $IDSMTP identity_select ${NV_WEBMAIL_LOCAL_PLUGINS:-}"
 PLUGINS_PHP=""; for p in $PLUGINS; do PLUGINS_PHP+="${PLUGINS_PHP:+, }'$p'"; done
 APP=/var/www/roundcube                 # symlink -> /var/www/roundcubemail-$VER
 DATA=/var/lib/roundcube
@@ -66,8 +71,9 @@ if [ ! -d /var/www/roundcubemail-$VER ]; then
   tar xzf $T -C /var/www
   chown -R root:root /var/www/roundcubemail-$VER
 fi
-echo "== third-party plugin identity_smtp $IDSMTP_VER (source reviewed 2026-11-02)"
 P=/var/www/roundcubemail-$VER/plugins/identity_smtp
+if [ -n "$IDSMTP" ]; then
+echo "== third-party plugin identity_smtp $IDSMTP_VER (source reviewed 2026-11-02)"
 if [ ! -d $P ]; then
   T2=identity_smtp-$IDSMTP_VER.tar.gz
   [ -f $T2 ] || curl -sSfL -o $T2 https://github.com/deflomu/Roundcube-SMTP-per-Identity-Plugin/archive/refs/tags/$IDSMTP_VER.tar.gz
@@ -76,6 +82,7 @@ if [ ! -d $P ]; then
   chown -R root:root $P
 fi
 put $P/.nv-version <<< "$IDSMTP_VER"   # read by nv-release-check (recipe/09); the plugin carries no version itself
+fi
 
 echo "== third-party skin Stretched Elastic @ ${SE_COMMIT:0:8} (Desktop/List layouts; reviewed 2026-11-08)"
 S=/var/www/roundcubemail-$VER/skins/stretchedelastic

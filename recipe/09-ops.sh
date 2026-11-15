@@ -1,7 +1,7 @@
 #!/bin/bash
 # recipe/09-ops.sh — quiet operations: you hear from the server only when something needs you.
 #   - Weekly release check for software outside the OS repos (Stalwart, Roundcube, identity_smtp, restic):
-#     lists newer upstream versions on the dashboard (nv-status), no mail. Upgrades stay deliberate: read the
+#     lists newer upstream versions on the dashboard (nv-status) and mails once per new version. Upgrades stay deliberate: read the
 #     release notes, then rerun the matching recipe.
 #   - OS security updates: dnf-automatic (recipe/01) installs them daily and reboots when needed, silently;
 #     a failed run mails via nv-alert@ (OnFailure).
@@ -32,9 +32,10 @@ echo "== weekly release check"
 install -d -m 700 /var/lib/nv-release-check
 put /usr/local/sbin/nv-release-check 700 <<'EOF'
 #!/usr/bin/python3 -I
-# nv-release-check: note which upstream versions are newer than what's installed, for the dashboard (no mail).
+# nv-release-check: which upstream versions are newer than what's installed: listed on the dashboard, and mailed
+# once per new version (nothing else is mailed).
 # State: /var/lib/nv-release-check/notified (one "name version" per line already reported).
-# usage: nv-release-check [--dry]   (--dry: print what it sees, remember nothing)
+# usage: nv-release-check [--dry]   (--dry: print what it sees, mail nothing, remember nothing)
 import json, os, re, subprocess, sys, urllib.request
 STATE = "/var/lib/nv-release-check/notified"
 DRY = "--dry" in sys.argv
@@ -67,6 +68,7 @@ checks = [   # name, installed version, latest (callable), where to read the not
 seen = set((read(STATE) or "").splitlines())
 new, problems, avail = [], [], []
 for name, have, latest, url in checks:
+    if name == "identity_smtp" and not have: continue   # optional plugin (webmail.identity_smtp), not installed
     try:
         l = latest()
     except Exception as e:
@@ -79,13 +81,18 @@ for name, have, latest, url in checks:
         seen.add(f"{name} {l}")
 if DRY:
     print("available:", avail or "nothing new"); print("problems:", problems or "none"); sys.exit(0)
-# for the dashboard (nv-status): what's newer than installed right now. No mail: you see it in ./nv status.
+# for the dashboard (nv-status): what's newer than installed right now.
 if len(problems) < len(checks):
     with open(STATE + ".available.tmp", "w") as f: f.write("\n".join(avail) + ("\n" if avail else ""))
     os.replace(STATE + ".available.tmp", os.path.join(os.path.dirname(STATE), "available"))
 if new:
-    with open(STATE + ".tmp", "w") as f: f.write("\n".join(sorted(seen)) + "\n")
-    os.replace(STATE + ".tmp", STATE)
+    body = ("Newer versions are out:\n\n" + "\n".join(new) + "\n\nRead every release's notes between your version and the new "
+            "one, then upgrade as the recipe header says (docs/operations.md, Upgrades). ./nv status lists them too.\n")
+    subject = "new release: " + ", ".join(n.split(":")[0] for n in new)
+    # remembered only once the mail went out, so a failed alert is tried again next week
+    if subprocess.run(["/usr/local/sbin/nv-alert", subject], input=body.encode()).returncode == 0:
+        with open(STATE + ".tmp", "w") as f: f.write("\n".join(sorted(seen)) + "\n")
+        os.replace(STATE + ".tmp", STATE)
 # GitHub hiccups are normal; only a run where every check failed counts as a failure (OnFailure mails)
 if problems and len(problems) == len(checks):
     print("\n".join(problems), file=sys.stderr); sys.exit(1)
@@ -93,7 +100,7 @@ EOF
 chmod 700 /usr/local/sbin/nv-release-check
 put /etc/systemd/system/nv-release-check.service <<'EOF'
 [Unit]
-Description=Weekly check for newer Stalwart/Roundcube/identity_smtp/restic releases (shown on the dashboard)
+Description=Weekly check for newer Stalwart/Roundcube/identity_smtp/restic releases (dashboard, and one mail per new version)
 After=network-online.target
 Wants=network-online.target
 OnFailure=nv-alert@%n.service

@@ -205,19 +205,39 @@ if live; then
   export RESTIC_CACHE_DIR=/var/cache/restic
   # the key must not be able to delete (see header): B2's sign-in answer lists what it may do
   # (the key goes to curl as a header file, never on its command line, where every local user could see it in ps)
-  caps=$(curl -s -H @<(printf 'Authorization: Basic %s\n' "$(printf '%s:%s' "$B2_ACCOUNT_ID" "$B2_ACCOUNT_KEY" | base64 -w0)") \
-    https://api.backblazeb2.com/b2api/v3/b2_authorize_account \
-    | jq -r '.apiInfo.storageApi.capabilities // empty | join(",")')
+  B2AUTH=$(curl -s -H @<(printf 'Authorization: Basic %s\n' "$(printf '%s:%s' "$B2_ACCOUNT_ID" "$B2_ACCOUNT_KEY" | base64 -w0)") \
+    https://api.backblazeb2.com/b2api/v3/b2_authorize_account)
+  caps=$(jq -r '.apiInfo.storageApi.capabilities // empty | join(",")' <<<"$B2AUTH")
   case ",$caps," in
     ,,) echo "couldn't read the B2 key's permissions (wrong key in restic.env, or B2 unreachable)"; exit 1 ;;
     *) # only list/read permissions plus writeFiles: anything else (deleteFiles, writeBuckets = lifecycle rules,
        # retention, bypassGovernance, ...) lets whoever holds the key destroy the history
-       extra=$(tr ',' '\n' <<<"$caps" | grep -vxE 'writeFiles|list[A-Za-z]*|read[A-Za-z]*' | paste -sd, -)
+       # (grep finds nothing for a good key and exits 1: that's success here, not an error for set -e)
+       extra=$(tr ',' '\n' <<<"$caps" | { grep -vxE 'writeFiles|list[A-Za-z]*|read[A-Za-z]*' || true; } | paste -sd, -)
        if [ -n "$extra" ]; then
          echo "the B2 key can do more than list/read/write files ($extra): make a new one (see header)"; exit 1
        fi
        echo "B2 key permissions: $caps (can't delete or change the bucket: good)" ;;
   esac
+  # ...and the bucket must keep what restic hides for 30 days (the window in which a wrecked history can be undone),
+  # never hide files on its own, and be private. Read with the same key (listBuckets).
+  bucket=$(jq -r '{accountId, bucketId: .apiInfo.storageApi.bucketId} | @json' <<<"$B2AUTH" | curl -s -X POST \
+      -H @<(printf 'Authorization: %s\n' "$(jq -r .authorizationToken <<<"$B2AUTH")") --data-binary @- \
+      "$(jq -r .apiInfo.storageApi.apiUrl <<<"$B2AUTH")/b2api/v3/b2_list_buckets" | jq -c '.buckets[0] // empty')
+  unset B2AUTH
+  [ -n "$bucket" ] || { echo "couldn't read the B2 bucket's settings (the key must be limited to the backup bucket)"; exit 1; }
+  jq -e '.bucketType == "allPrivate"' <<<"$bucket" >/dev/null || { echo "the B2 bucket isn't private: make it private"; exit 1; }
+  if jq -e '[.lifecycleRules[] | select(.daysFromUploadingToHiding != null)] | length > 0' <<<"$bucket" >/dev/null; then
+    echo "the B2 bucket has a lifecycle rule that hides files by age (daysFromUploadingToHiding): it would delete live backups"; exit 1
+  fi
+  if jq -e '[.lifecycleRules[] | select(.daysFromHidingToDeleting != null and .daysFromHidingToDeleting < 30)] | length > 0' <<<"$bucket" >/dev/null; then
+    echo "the B2 bucket deletes hidden files after less than 30 days (B2's \"keep only the last version\" is 1 day): set it to 30 (see header)"; exit 1
+  fi
+  if jq -e '[.lifecycleRules[] | select(.fileNamePrefix == "" and .daysFromHidingToDeleting >= 30)] | length > 0' <<<"$bucket" >/dev/null; then
+    echo "B2 bucket: private, hidden files kept $(jq -r '[.lifecycleRules[] | select(.fileNamePrefix == "") | .daysFromHidingToDeleting] | min' <<<"$bucket") days: good"
+  else
+    echo "note: the B2 bucket has no rule deleting hidden files, so they're kept forever (safe, but they cost storage): see header"
+  fi
   restic cat config >/dev/null 2>&1 || restic init
 fi
 systemctl list-timers 'nv-backup*' --no-pager | head -4
