@@ -64,8 +64,10 @@ T=roundcubemail-$VER-complete.tar.gz
 [ -f $T.asc ] || curl -sSfLO https://github.com/roundcube/roundcubemail/releases/download/$VER/$T.asc
 export GNUPGHOME=/root/.gnupg-roundcube; mkdir -p -m 700 $GNUPGHOME
 gpg -q --list-keys $SIGNING_KEY >/dev/null 2>&1 || curl -sSfL https://roundcube.net/download/pubkey.asc | gpg -q --import
-# VALIDSIG's last field is the primary key's full fingerprint (GOODSIG also carries user-ID text, so match only this)
-gpg --status-fd 1 --verify $T.asc $T 2>/dev/null | awk '$2 == "VALIDSIG" { print $NF }' | grep -qx "$SIGNING_FPR" \
+# GOODSIG: good signature by a key that isn't expired or revoked (gpg says EXPKEYSIG/REVKEYSIG instead); VALIDSIG's
+# last field: the primary key's full fingerprint, which must be Roundcube's (GOODSIG's user-ID text isn't matched)
+gpg --status-fd 1 --verify $T.asc $T 2>/dev/null | awk -v F="$SIGNING_FPR" '$2 == "GOODSIG" { g = 1 } $2 == "VALIDSIG" && $NF == F { v = 1 }
+  END { exit !(g && v) }' \
   && echo "signature OK ($SIGNING_KEY)" || { echo "SIGNATURE CHECK FAILED"; exit 1; }
 
 echo "== install to /var/www/roundcubemail-$VER (code root-owned, read-only for nginx)"

@@ -48,12 +48,24 @@ if ! command -v stalwart >/dev/null; then   # only checked when it would actuall
   if live && ! echo "$PIN  stalwart-install.sh" | sha256sum -c --quiet; then
     echo "stalwart-install.sh changed (sha256 $(sha256sum stalwart-install.sh | cut -c1-64)): review it before trusting it"; exit 1
   fi
-  # it always fetches the latest release: point it at the pinned one, then check the binary it installed
-  sed -i "s#releases/latest/download#releases/download/v$STALWART_VER#" stalwart-install.sh
+  # The installer fetches the latest release and starts it. Instead: download the pinned release here, check the
+  # binary inside it BEFORE anything runs, and have the installer copy that checked file instead of downloading.
+  if live && [ "$(uname -m)" != x86_64 ]; then echo "the pinned Stalwart build is for x86_64 only"; exit 1; fi
+  TGZ=/root/installs/stalwart-$STALWART_VER-x86_64-unknown-linux-gnu.tar.gz
+  [ -f "$TGZ" ] || curl --proto '=https' --tlsv1.2 -sSfL -o "$TGZ" \
+    "https://github.com/stalwartlabs/stalwart/releases/download/v$STALWART_VER/stalwart-x86_64-unknown-linux-gnu.tar.gz"
+  if live && [ "$(tar -xzOf "$TGZ" stalwart | sha256sum | cut -c1-64)" != "$STALWART_SHA256" ]; then
+    mv -f "$TGZ" "$TGZ.REJECTED"; echo "the downloaded Stalwart $STALWART_VER isn't the pinned build: nothing installed"; exit 1
+  fi
+  DL='ensure downloader "${BASE_URL}/${_component}-${_arch}.tar.gz" "$_tar" "$_arch"'
+  if live && ! grep -qF "$DL" stalwart-install.sh; then
+    echo "stalwart-install.sh no longer downloads the way this recipe expects: nothing installed"; exit 1
+  fi
+  sed -i "s#${DL//\$/\\\$}#ensure cp \"$TGZ\" \"\$_tar\"#" stalwart-install.sh
   sh stalwart-install.sh
-  if live && ! echo "$STALWART_SHA256  /usr/local/bin/stalwart" | sha256sum -c --quiet; then
-    systemctl stop stalwart; mv /usr/local/bin/stalwart /root/installs/stalwart.REJECTED
-    echo "the installed Stalwart binary isn't the pinned $STALWART_VER build: stopped, moved to /root/installs/stalwart.REJECTED"; exit 1
+  if live && ! echo "$STALWART_SHA256  /usr/local/bin/stalwart" | sha256sum -c --quiet; then   # belt and braces
+    mv /usr/local/bin/stalwart /root/installs/stalwart.REJECTED; systemctl stop stalwart || true
+    echo "the installed Stalwart binary isn't the pinned $STALWART_VER build: moved to /root/installs/stalwart.REJECTED, stopped"; exit 1
   fi
 fi
 stalwart --version || true

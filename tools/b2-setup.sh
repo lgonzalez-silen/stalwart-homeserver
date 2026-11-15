@@ -6,7 +6,8 @@
 #    an existing one checked and fixed (made private, rule added). A rule that hides files by age stops it.
 # 2. key: a new key for that bucket only that can list, read and write but not delete (a break-in on the server
 #    can't wipe the backups), unless the server already has /root/.secrets/restic.env (kept; --replace-key makes
-#    a new one). Older keys of this server (same name) are deleted once the new one is in place.
+#    a new one and deletes the older ones). After a restore, the old server's key is listed, not deleted: delete
+#    it once recipe 08 passes.
 # 3. /root/.secrets/restic.env on the server (0600). Nothing secret is printed or put on a command line.
 #    --replace-key changes only the key lines. A repository already in the bucket (a restore) keeps its password:
 #    the tool never offers a new one for it.
@@ -31,9 +32,9 @@ if not (HOST and BUCKET):
 OPENV = {**os.environ, **({"OP_ACCOUNT": E("BACKUP_OP_ACCOUNT")} if E("BACKUP_OP_ACCOUNT") else {})}
 
 try:   # stdin is this script (heredoc): prompts and answers go through the terminal, when there is one
-    TTY = open("/dev/tty", "r+")
+    TTY, TTYOUT = open("/dev/tty"), open("/dev/tty", "w")   # two handles: a terminal can't be opened "r+" (no seeking)
 except OSError:
-    TTY = None
+    TTY = TTYOUT = None
 
 def secret(setting, label, create=False):
     ref = E("BACKUP_" + setting.upper())
@@ -43,8 +44,8 @@ def secret(setting, label, create=False):
             sys.exit(f"backup.{setting}: the command failed (exit {r.returncode})")
         return r.stdout.strip()
     if ref and not ref.startswith("op://"):
-        sys.exit(f"backup.{setting} must be \"cmd:...\", \"op://...\" or empty, never the secret itself: site.json values are "
-                 f"copied to the server on every ./nv run")
+        sys.exit(f"backup.{setting} must be \"cmd:...\", \"op://...\" or empty, never the secret itself (site.json is a "
+                 f"file in your site repo: secrets belong in your password manager)")
     if not ref:
         hint = " (Enter: make one)" if create else ""
         v = getpass.getpass(f"{label}{hint} (backup.{setting} is not set; typing is hidden): ").strip()
@@ -56,13 +57,13 @@ def secret(setting, label, create=False):
             sys.exit("no terminal to show a new restic password on: run this in your own terminal")
         import secrets
         v = secrets.token_urlsafe(30)
-        TTY.write(f"\nNew restic password, shown once. Save it in your password manager NOW: without it the backups\n"
-                  f"can't be read, by anyone.\n\n    {v}\n\n"); TTY.flush()
+        TTYOUT.write(f"\nNew restic password, shown once. Save it in your password manager NOW: without it the backups\n"
+                     f"can't be read, by anyone.\n\n    {v}\n\n"); TTYOUT.flush()
         while True:
-            TTY.write("Type its last 4 characters to confirm you saved it: "); TTY.flush()
+            TTYOUT.write("Type its last 4 characters to confirm you saved it: "); TTYOUT.flush()
             if TTY.readline().strip() == v[-4:]: break
-            TTY.write("doesn't match: check what you saved\n")
-        TTY.write("\033[2J\033[H"); TTY.flush()   # clear the screen: the password doesn't stay in view
+            TTYOUT.write("doesn't match: check what you saved\n")
+        TTYOUT.write("\033[2J\033[3J\033[H"); TTYOUT.flush()   # clear the screen and its scrollback: the password doesn't stay
         return v
     r = subprocess.run(["op", "read", ref], stdin=TTY, capture_output=True, text=True, env=OPENV)
     if r.returncode == 0 and r.stdout.strip():
@@ -135,36 +136,39 @@ if has_env and not REPLACE:
     print("server already has /root/.secrets/restic.env: key kept (--replace-key makes a new one)")
     sys.exit()
 NAME = "restic-" + HOST.replace(".", "-")
-KEYBODY = {"accountId": ACCT, "keyName": NAME, "bucketId": bid, "capabilities": ["listBuckets", "listFiles", "readFiles", "writeFiles"]}
-if has_env:
-    # --replace-key: only the key lines change; the repository and its password on the server stay as they are
-    k = do(f"create key {NAME} for {BUCKET} only: list, read, write (no delete)", "b2_create_key", KEYBODY)
-    if DRY:
-        print(f"would: put the new key in /root/.secrets/restic.env on {HOST} (repository and password unchanged)"); sys.exit()
-    env = f"B2_ACCOUNT_ID={shlex.quote(k['applicationKeyId'])}\nB2_ACCOUNT_KEY={shlex.quote(k['applicationKey'])}\n"
-    w = ssh("umask 077; f=/root/.secrets/restic.env; { grep -vE '^B2_ACCOUNT_(ID|KEY)=' $f; cat; } > $f.new && mv $f.new $f", env)
+if has_env:   # --replace-key: only the key lines change; the repository and its password on the server stay as they are
+    pw, what = None, f"put the new key in /root/.secrets/restic.env on {HOST} (repository and password unchanged)"
 else:
     # a repository already in the bucket (restoring to a new server): its password must be the existing one, never a new one
     existing = bid and b2("b2_list_file_names", {"bucketId": bid, "prefix": f"{PATH}/config", "maxFileCount": 1})["files"]
     if existing:
         print(f"b2:{BUCKET}:{PATH} already holds a repository: using its restic password (it can't be replaced)")
     pw = secret("restic_password", "restic password of that repository" if existing else "restic password", create=not existing)
-    k = do(f"create key {NAME} for {BUCKET} only: list, read, write (no delete)", "b2_create_key", KEYBODY)
-    if DRY:
-        print(f"would: write /root/.secrets/restic.env on {HOST} (repository b2:{BUCKET}:{PATH})"); sys.exit()
     if "\n" in pw:
         sys.exit("the restic password spans several lines: use a one-line password")
-    # quoted: restic.env is read with the shell's "." (a $ or ` in a password must stay literal)
-    env = (f"RESTIC_REPOSITORY={shlex.quote(f'b2:{BUCKET}:{PATH}')}\nRESTIC_PASSWORD={shlex.quote(pw)}\n"
-           f"B2_ACCOUNT_ID={shlex.quote(k['applicationKeyId'])}\nB2_ACCOUNT_KEY={shlex.quote(k['applicationKey'])}\n")
-    w = ssh("umask 077; mkdir -p /root/.secrets; cat > /root/.secrets/restic.env.new && mv /root/.secrets/restic.env.new /root/.secrets/restic.env", env)
+    what = f"write /root/.secrets/restic.env on {HOST} (repository b2:{BUCKET}:{PATH})"
+k = do(f"create key {NAME} for {BUCKET} only: list, read, write (no delete)", "b2_create_key",
+       {"accountId": ACCT, "keyName": NAME, "bucketId": bid, "capabilities": ["listBuckets", "listFiles", "readFiles", "writeFiles"]})
+if DRY:
+    print("would: " + what); sys.exit()
+q = shlex.quote   # restic.env is read with the shell's "." (a $ or ` in a password must stay literal)
+keylines = f"B2_ACCOUNT_ID={q(k['applicationKeyId'])}\nB2_ACCOUNT_KEY={q(k['applicationKey'])}\n"
+if has_env:
+    w = ssh("umask 077; f=/root/.secrets/restic.env; { grep -vE '^B2_ACCOUNT_(ID|KEY)=' $f; cat; } > $f.new && mv $f.new $f", keylines)
+else:
+    w = ssh("umask 077; mkdir -p /root/.secrets; cat > /root/.secrets/restic.env.new && mv /root/.secrets/restic.env.new /root/.secrets/restic.env",
+            f"RESTIC_REPOSITORY={q(f'b2:{BUCKET}:{PATH}')}\nRESTIC_PASSWORD={q(pw)}\n" + keylines)
 if w.returncode:
     b2("b2_delete_key", {"applicationKeyId": k["applicationKeyId"]})
     sys.exit(f"could not write restic.env on {HOST} (the new key was deleted again): {w.stderr.strip()[:200]}")
 print(f"wrote /root/.secrets/restic.env on {HOST} (repository b2:{BUCKET}:{PATH}, key {k['applicationKeyId']})")
-if True:   # this server's older keys (a rotation, or the server a restore replaces): they shouldn't keep working
-    keys = b2("b2_list_keys", {"accountId": ACCT, "maxKeyCount": 1000})["keys"]
-    for old in [x for x in keys if x["keyName"] == NAME and x["applicationKeyId"] != k["applicationKeyId"]]:
-        b2("b2_delete_key", {"applicationKeyId": old["applicationKeyId"]}); print(f"deleted older key {old['applicationKeyId']}")
+older = [x["applicationKeyId"] for x in b2("b2_list_keys", {"accountId": ACCT, "maxKeyCount": 1000})["keys"]
+         if x["keyName"] == NAME and x["applicationKeyId"] != k["applicationKeyId"]]
+if REPLACE:   # same repository and password, new key in place: the old ones go
+    for old in older:
+        b2("b2_delete_key", {"applicationKeyId": old}); print(f"deleted older key {old}")
+elif older:   # e.g. the server a restore replaces: kept until recipe 08 has proved the new setup works
+    print(f"older keys of this server still work: {', '.join(older)}. Once recipe 08 passes, delete them in Backblaze "
+          f"(App Keys), or run this again with --replace-key")
 print("next: ./nv run recipe/08-backup.sh")
 PY
