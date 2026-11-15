@@ -26,6 +26,9 @@ EOF
 put /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg <<'EOF'
 network: {config: disabled}
 EOF
+# Not cloud-init? Some images (OpenNebula's one-context) also reset the hostname and /etc/resolv.conf at every
+# boot: check both after recipe 01's reboot. For one-context, move net-15-hostname and loc-10-network out of
+# /etc/one-context.d (renaming isn't enough: it runs every file in there).
 [ -n "${NV_SERVER_PROVIDER_HOSTNAME:-}" ] && sed -i "/$NV_SERVER_PROVIDER_HOSTNAME/d" /etc/hosts
 add_line /etc/hosts "$PUBLIC_IP	$HOST $SHORT"
 [ -n "$PUBLIC_IP6" ] && add_line /etc/hosts "$PUBLIC_IP6	$HOST $SHORT"   # IPv6 only if the server has it
