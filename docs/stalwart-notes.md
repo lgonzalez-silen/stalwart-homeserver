@@ -7,7 +7,8 @@ handle it.
 
 - **Most settings live in Stalwart's database, not in files.** `/etc/stalwart/config.json` only says where the data
   store is. Everything else is set in the WebUI or through the admin API (`x:<Object>/set` JMAP methods). Recipe 05
-  sets the ones this setup changes, so they're written down and re-appliable.
+  sets the ones this setup changes, so they're written down and re-appliable. That also means a WebUI change to
+  one of those settings lasts only until recipe 05 runs again; any other setting stays as you set it.
 - **The setup wizard is one API object.** In bootstrap mode (first start, no `config.json`) the wizard just saves
   `x:Bootstrap` (hostname, default domain, ACME on/off, DKIM keys on/off, stores, log). Recipe 03 saves it itself,
   signed in with `STALWART_RECOVERY_ADMIN=<user>:<password>` (a one-time value; Stalwart then doesn't print a

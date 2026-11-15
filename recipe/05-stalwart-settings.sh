@@ -12,7 +12,8 @@
 #           Large files belong in shared links: on a personal server every big message is a real share of the disk.
 #           mail.pyzor (optional, default false): ask public.pyzor.org about each incoming message (see below).
 #
-# What this setup changes from Stalwart's defaults, and where (WebUI names, to check or redo by hand):
+# What this setup changes from Stalwart's defaults, and where (WebUI names, to check or redo by hand). Each run sets
+# them again, so a WebUI change to one of these is undone by the next run: change it here or in site.json instead.
 #   - First setup (recipe/03): default domain, ACME off, DKIM keys on, manual DNS; admin account; the API key
 #   - TLS › Certificates: File /etc/stalwart/tls/fullchain.pem + privkey.pem
 #   - Listeners: smtp 25, submissions 465 (implicit), submission 587 (STARTTLS), imaps 993,

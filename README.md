@@ -8,6 +8,13 @@ Optional: pull mail from Google accounts (Gmail, Google Workspace) into the serv
 It's opinionated on purpose: one way of doing each thing, written down, and tested on a real server that a family
 uses every day. Everything specific to your site lives in one file, `site.json`.
 
+**These are choices, not the only ones.** Stalwart can do much more than this setup uses, and many of its defaults
+are fine to change: read [its documentation](https://stalw.art/docs) and look around the WebUI. Most settings live in
+Stalwart's database, so you can change them in the WebUI at any time after setup. One catch: the settings
+`recipe/05-stalwart-settings.sh` manages (listed in its header: listeners, ban rates, spam threshold, DKIM mode, and a
+few more) are put back to this setup's values every time recipe 05 runs. Change those in `site.json` where there's a
+setting for it, or in the recipe; everything else stays as you set it. Write down why in your `DECISIONS.md`.
+
 > **Read this first: you are taking on your own mail.**
 > Running a mail server means you are responsible for every message your people send and receive. Mail can be lost
 > (a mistaken cleanup, a disk failure without a working backup), delayed or rejected (a DNS or reputation problem
