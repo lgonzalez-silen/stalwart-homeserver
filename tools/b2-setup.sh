@@ -6,8 +6,10 @@
 #    an existing one checked and fixed (made private, rule added). A rule that hides files by age stops it.
 # 2. key: a new key for that bucket only that can list, read and write but not delete (a break-in on the server
 #    can't wipe the backups), unless the server already has /root/.secrets/restic.env (kept; --replace-key makes
-#    a new one and deletes this server's older keys).
+#    a new one). Older keys of this server (same name) are deleted once the new one is in place.
 # 3. /root/.secrets/restic.env on the server (0600). Nothing secret is printed or put on a command line.
+#    --replace-key changes only the key lines. A repository already in the bucket (a restore) keeps its password:
+#    the tool never offers a new one for it.
 # Settings (backup.*): bucket, path (folder in the bucket, default "nv"), and where the three secrets come from:
 # b2_master_key_id, b2_master_key (the account's master application key, Backblaze › App Keys), restic_password.
 # Any password manager works. Each is one of:
@@ -19,7 +21,7 @@
 #                                    once for you to save
 # Keep the restic password: the backups can't be read without it.
 exec python3 -I - "$@" <<'PY'
-import base64, getpass, json, os, subprocess, sys, urllib.error, urllib.request
+import base64, getpass, json, os, shlex, subprocess, sys, urllib.error, urllib.request
 
 DRY, REPLACE = "--dry" in sys.argv, "--replace-key" in sys.argv
 E = lambda k, d="": os.environ.get("NV_" + k, "") or d
@@ -28,29 +30,41 @@ if not (HOST and BUCKET):
     sys.exit("set server.hostname and backup.bucket in site.json")
 OPENV = {**os.environ, **({"OP_ACCOUNT": E("BACKUP_OP_ACCOUNT")} if E("BACKUP_OP_ACCOUNT") else {})}
 
+try:   # stdin is this script (heredoc): prompts and answers go through the terminal, when there is one
+    TTY = open("/dev/tty", "r+")
+except OSError:
+    TTY = None
+
 def secret(setting, label, create=False):
     ref = E("BACKUP_" + setting.upper())
-    if ref.startswith("cmd:"):   # any password manager's CLI: the command prints the secret
-        r = subprocess.run(ref[4:], shell=True, capture_output=True, text=True)
+    if ref.startswith("cmd:"):   # any password manager's CLI: the command prints the secret (its prompts stay visible)
+        r = subprocess.run(ref[4:], shell=True, stdin=TTY, stdout=subprocess.PIPE, text=True)
         if r.returncode or not r.stdout.strip():
-            sys.exit(f"backup.{setting}: the command failed: {r.stderr.strip()[:200]}")
+            sys.exit(f"backup.{setting}: the command failed (exit {r.returncode})")
         return r.stdout.strip()
-    if not ref.startswith("op://"):
+    if ref and not ref.startswith("op://"):
+        sys.exit(f"backup.{setting} must be \"cmd:...\", \"op://...\" or empty, never the secret itself: site.json values are "
+                 f"copied to the server on every ./nv run")
+    if not ref:
         hint = " (Enter: make one)" if create else ""
         v = getpass.getpass(f"{label}{hint} (backup.{setting} is not set; typing is hidden): ").strip()
         if v or not create:
             return v or sys.exit("empty")
         if DRY:
             print("would: make a new restic password and show it once"); return "<new>"
+        if TTY is None:
+            sys.exit("no terminal to show a new restic password on: run this in your own terminal")
         import secrets
         v = secrets.token_urlsafe(30)
-        print(f"\nNew restic password, shown once. Save it in your password manager NOW: without it the backups\n"
-              f"can't be read, by anyone.\n\n    {v}\n")
-        while input("Type its last 4 characters to confirm you saved it: ").strip() != v[-4:]:
-            print("doesn't match: check what you saved")
-        print("\033[8A\033[J", end="")   # clear the password from the screen
+        TTY.write(f"\nNew restic password, shown once. Save it in your password manager NOW: without it the backups\n"
+                  f"can't be read, by anyone.\n\n    {v}\n\n"); TTY.flush()
+        while True:
+            TTY.write("Type its last 4 characters to confirm you saved it: "); TTY.flush()
+            if TTY.readline().strip() == v[-4:]: break
+            TTY.write("doesn't match: check what you saved\n")
+        TTY.write("\033[2J\033[H"); TTY.flush()   # clear the screen: the password doesn't stay in view
         return v
-    r = subprocess.run(["op", "read", ref], capture_output=True, text=True, env=OPENV)
+    r = subprocess.run(["op", "read", ref], stdin=TTY, capture_output=True, text=True, env=OPENV)
     if r.returncode == 0 and r.stdout.strip():
         return r.stdout.strip()
     vault, item, field = (ref[5:].split("/") + ["", "", ""])[:3]
@@ -98,13 +112,18 @@ if not found:
     bid = made and made["bucketId"]
 else:
     bk = found[0]; bid = bk["bucketId"]; rules = bk.get("lifecycleRules") or []
+    # the same rules recipe 08 checks: nothing hidden by age, nothing hidden deleted in under 30 days
     if any(r.get("daysFromUploadingToHiding") for r in rules):
         sys.exit(f"{BUCKET} has a rule that hides files by age (it would expire backups): remove it in Backblaze first")
+    if any(r.get("daysFromHidingToDeleting") is not None and r["daysFromHidingToDeleting"] < 30 for r in rules):
+        sys.exit(f"{BUCKET} has a rule deleting hidden files in under 30 days: remove it in Backblaze first")
     fix = {}
     if bk["bucketType"] != "allPrivate":
         fix["bucketType"] = "allPrivate"
     if not any(r.get("fileNamePrefix") == "" and (r.get("daysFromHidingToDeleting") or 0) >= 30 for r in rules):
-        fix["lifecycleRules"] = [r for r in rules if r.get("fileNamePrefix") != ""] + [RULE]
+        if rules:
+            sys.exit(f"{BUCKET} has other lifecycle rules: remove them in Backblaze, then run this again (it adds the 30-day rule)")
+        fix["lifecycleRules"] = [RULE]
     if fix:
         do(f"bucket {BUCKET}: " + ", ".join({"bucketType": "make private", "lifecycleRules": "keep deleted files 30 days"}[k] for k in fix),
            "b2_update_bucket", {"accountId": ACCT, "bucketId": bid, **fix})
@@ -115,20 +134,35 @@ has_env = ssh("test -s /root/.secrets/restic.env").returncode == 0
 if has_env and not REPLACE:
     print("server already has /root/.secrets/restic.env: key kept (--replace-key makes a new one)")
     sys.exit()
-pw = secret("restic_password", "restic password", create=True)
 NAME = "restic-" + HOST.replace(".", "-")
-k = do(f"create key {NAME} for {BUCKET} only: list, read, write (no delete)", "b2_create_key",
-       {"accountId": ACCT, "keyName": NAME, "bucketId": bid, "capabilities": ["listBuckets", "listFiles", "readFiles", "writeFiles"]})
-if DRY:
-    print(f"would: write /root/.secrets/restic.env on {HOST} (repository b2:{BUCKET}:{PATH})"); sys.exit()
-env = (f"RESTIC_REPOSITORY=b2:{BUCKET}:{PATH}\nRESTIC_PASSWORD={pw}\n"
-       f"B2_ACCOUNT_ID={k['applicationKeyId']}\nB2_ACCOUNT_KEY={k['applicationKey']}\n")
-w = ssh("umask 077; mkdir -p /root/.secrets; cat > /root/.secrets/restic.env.new && mv /root/.secrets/restic.env.new /root/.secrets/restic.env", env)
+KEYBODY = {"accountId": ACCT, "keyName": NAME, "bucketId": bid, "capabilities": ["listBuckets", "listFiles", "readFiles", "writeFiles"]}
+if has_env:
+    # --replace-key: only the key lines change; the repository and its password on the server stay as they are
+    k = do(f"create key {NAME} for {BUCKET} only: list, read, write (no delete)", "b2_create_key", KEYBODY)
+    if DRY:
+        print(f"would: put the new key in /root/.secrets/restic.env on {HOST} (repository and password unchanged)"); sys.exit()
+    env = f"B2_ACCOUNT_ID={shlex.quote(k['applicationKeyId'])}\nB2_ACCOUNT_KEY={shlex.quote(k['applicationKey'])}\n"
+    w = ssh("umask 077; f=/root/.secrets/restic.env; { grep -vE '^B2_ACCOUNT_(ID|KEY)=' $f; cat; } > $f.new && mv $f.new $f", env)
+else:
+    # a repository already in the bucket (restoring to a new server): its password must be the existing one, never a new one
+    existing = bid and b2("b2_list_file_names", {"bucketId": bid, "prefix": f"{PATH}/config", "maxFileCount": 1})["files"]
+    if existing:
+        print(f"b2:{BUCKET}:{PATH} already holds a repository: using its restic password (it can't be replaced)")
+    pw = secret("restic_password", "restic password of that repository" if existing else "restic password", create=not existing)
+    k = do(f"create key {NAME} for {BUCKET} only: list, read, write (no delete)", "b2_create_key", KEYBODY)
+    if DRY:
+        print(f"would: write /root/.secrets/restic.env on {HOST} (repository b2:{BUCKET}:{PATH})"); sys.exit()
+    if "\n" in pw:
+        sys.exit("the restic password spans several lines: use a one-line password")
+    # quoted: restic.env is read with the shell's "." (a $ or ` in a password must stay literal)
+    env = (f"RESTIC_REPOSITORY={shlex.quote(f'b2:{BUCKET}:{PATH}')}\nRESTIC_PASSWORD={shlex.quote(pw)}\n"
+           f"B2_ACCOUNT_ID={shlex.quote(k['applicationKeyId'])}\nB2_ACCOUNT_KEY={shlex.quote(k['applicationKey'])}\n")
+    w = ssh("umask 077; mkdir -p /root/.secrets; cat > /root/.secrets/restic.env.new && mv /root/.secrets/restic.env.new /root/.secrets/restic.env", env)
 if w.returncode:
     b2("b2_delete_key", {"applicationKeyId": k["applicationKeyId"]})
     sys.exit(f"could not write restic.env on {HOST} (the new key was deleted again): {w.stderr.strip()[:200]}")
 print(f"wrote /root/.secrets/restic.env on {HOST} (repository b2:{BUCKET}:{PATH}, key {k['applicationKeyId']})")
-if REPLACE:
+if True:   # this server's older keys (a rotation, or the server a restore replaces): they shouldn't keep working
     keys = b2("b2_list_keys", {"accountId": ACCT, "maxKeyCount": 1000})["keys"]
     for old in [x for x in keys if x["keyName"] == NAME and x["applicationKeyId"] != k["applicationKeyId"]]:
         b2("b2_delete_key", {"applicationKeyId": old["applicationKeyId"]}); print(f"deleted older key {old['applicationKeyId']}")

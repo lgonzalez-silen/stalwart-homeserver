@@ -3,8 +3,8 @@
 # Run from your computer:  ./nv run recipe/08-backup.sh
 # Settings: alerts.to (address that receives alerts), alerts.from (sender shown on alerts). Alerts are put straight
 # into the Inbox of the account that has alerts.to as its address or as an alias; if there is none, this recipe
-# creates one (no password: set one with nv-set-password to read it in webmail). Optional alerts.account: a
-# Stalwart account id to use instead (ids: tools/google/README.md, "account").
+# creates one (with a random password nobody knows: set your own with nv-set-password to read it in webmail).
+# Optional alerts.account: a Stalwart account id to use instead (ids: tools/google/README.md, "account").
 #
 # Design: two places only (server + B2). Data only, no /etc and no secrets: everything else is
 # rebuilt by the recipes. Backed up:
@@ -53,7 +53,7 @@ live && { [ -s /root/.secrets/restic.env ] || { echo "missing /root/.secrets/res
 echo "== alerts account (owner of $ALERT_TO)"
 if live; then
   ALERT_ACCOUNT=$(ALERT_TO="$ALERT_TO" ALERT_ACCOUNT="${NV_ALERTS_ACCOUNT:-}" python3 -I - <<'PY'
-import json, os, sys, urllib.request
+import json, os, secrets, subprocess, sys, urllib.request
 K = open("/root/.secrets/laptop-api.key").read().strip()
 def j(calls):
     r = urllib.request.Request("http://127.0.0.1:8080/jmap/", data=json.dumps({"using": ["urn:ietf:params:jmap:core",
@@ -64,12 +64,14 @@ def j(calls):
     return out[0][1]
 to, want = os.environ["ALERT_TO"].lower(), os.environ["ALERT_ACCOUNT"]
 doms = {d["id"]: d["name"].lower() for d in j([["x:Domain/get", {"ids": None, "properties": ["name"]}, "d"]])["list"]}
-accts = j([["x:Account/get", {"ids": None, "properties": ["name", "emailAddress", "aliases"]}, "a"]])["list"]
+accts = j([["x:Account/get", {"ids": None, "properties": ["name", "domainId", "emailAddress", "aliases"]}, "a"]])["list"]
+def own(a):   # every address the account receives: name@domain, its email address, its enabled aliases
+    s = {f'{a["name"]}@{doms.get(a.get("domainId"), "")}'.lower(), (a.get("emailAddress") or "").lower()}
+    return s | {f'{x["name"]}@{doms.get(x["domainId"], "")}'.lower() for x in (a.get("aliases") or {}).values() if x.get("enable", True)}
 if want:   # set in site.json: use it, but say so if it doesn't own the address
     a = next((a for a in accts if a["id"] == want), None) or sys.exit(f"alerts.account {want}: no such account")
-    print(f"using alerts.account {want} ({a['name']})", file=sys.stderr); print(want); sys.exit()
-own = lambda a: {(a.get("emailAddress") or "").lower()} | {f'{x["name"]}@{doms.get(x["domainId"], "")}'.lower()
-                 for x in (a.get("aliases") or {}).values() if x.get("enable", True)}
+    note = "" if to in own(a) else f" (WARNING: it doesn't have {to} as an address: alerts go to {a['name']})"
+    print(f"using alerts.account {want} ({a['name']}){note}", file=sys.stderr); print(want); sys.exit()
 hits = [a for a in accts if to in own(a)]
 if len(hits) > 1:
     sys.exit(f"{to} belongs to several accounts ({', '.join(a['name'] for a in hits)}): set alerts.account")
@@ -77,14 +79,17 @@ if hits:
     print(f"{to}: account {hits[0]['id']} ({hits[0]['name']})", file=sys.stderr); print(hits[0]["id"]); sys.exit()
 local, _, dom = to.partition("@")
 did = next((i for i, n in doms.items() if n == dom), None) or sys.exit(f"{dom} isn't a domain in Stalwart: add it, or change alerts.to")
-new = j([["x:Account/set", {"create": {"n": {"@type": "User", "name": local, "domainId": did,
-          "description": "alerts (recipe/08)"}}}, "c"]])["created"]["n"]["id"]
-print(f"{to}: created account {new} (no password; nv-set-password {local} to read it in webmail)", file=sys.stderr)
+# a random password nobody knows (as a hash, like nv-set-password stores): the account has the credential that
+# nv-set-password replaces when you want to read it in webmail
+pw = subprocess.run(["openssl", "passwd", "-6", "-stdin"], input=secrets.token_urlsafe(32).encode(), capture_output=True, check=True).stdout.decode().strip()
+new = j([["x:Account/set", {"create": {"n": {"@type": "User", "name": local, "domainId": did, "description": "alerts (recipe/08)",
+          "credentials": {"0": {"@type": "Password", "secret": pw}}}}}, "c"]])["created"]["n"]["id"]
+print(f"{to}: created account {new} (random password; nv-set-password {local} to read it in webmail)", file=sys.stderr)
 print(new)
 PY
 ) || exit 1
 else
-  ALERT_ACCOUNT="<alerts account id>"
+  ALERT_ACCOUNT="<secret:alerts.account>"   # looked up on the server; ./nv diff matches it like a secret
 fi
 install -d -m 700 /var/backups/nv /var/cache/restic
 
@@ -239,6 +244,11 @@ if live; then
   B2AUTH=$(curl -s -H @<(printf 'Authorization: Basic %s\n' "$(printf '%s:%s' "$B2_ACCOUNT_ID" "$B2_ACCOUNT_KEY" | base64 -w0)") \
     https://api.backblazeb2.com/b2api/v3/b2_authorize_account)
   caps=$(jq -r '.apiInfo.storageApi.capabilities // empty | join(",")' <<<"$B2AUTH")
+  # ...and must be limited to this repository's bucket (a key for all buckets passes the permission check otherwise)
+  kbucket=$(jq -r '.apiInfo.storageApi.bucketName // empty' <<<"$B2AUTH"); rbucket=$(cut -d: -f2 <<<"$RESTIC_REPOSITORY")
+  if [ -n "$caps" ] && [ "$kbucket" != "$rbucket" ]; then
+    echo "the B2 key isn't limited to the bucket $rbucket (it is limited to: ${kbucket:-no bucket, all of them}): make a new one (see header)"; exit 1
+  fi
   case ",$caps," in
     ,,) echo "couldn't read the B2 key's permissions (wrong key in restic.env, or B2 unreachable)"; exit 1 ;;
     *) # only list/read permissions plus writeFiles: anything else (deleteFiles, writeBuckets = lifecycle rules,

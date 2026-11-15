@@ -165,7 +165,7 @@ grubby --update-kernel ALL --remove-args selinux >/dev/null 2>&1 || true
 echo "== summary"
 hostnamectl --static
 grep -E '^(nameserver|search)' /etc/resolv.conf
-SPAMHAUS=$(dig +short +time=10 +tries=3 @127.0.0.1 2.0.0.127.zen.spamhaus.org A | head -1)
+SPAMHAUS=$(dig +short +time=10 +tries=3 @127.0.0.1 2.0.0.127.zen.spamhaus.org A 2>/dev/null | grep -m1 -E '^127\.' || true)
 echo "spamhaus test (expect 127.0.0.x): ${SPAMHAUS:-NO ANSWER (right after a resolver restart that can be normal: run the dig again in a minute)}"
 firewall-cmd --zone=public --list-services
 sshd -T | grep -E '^(passwordauthentication|permitrootlogin) '

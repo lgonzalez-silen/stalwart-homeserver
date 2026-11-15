@@ -99,7 +99,7 @@ class Google:
         if d and d[0]: return True
         if key.startswith("gm:"): return False
         # second, independent check (Gmail's X-GM-RAW search can lag): a plain IMAP header search in All Mail
-        typ, d = self.m.uid("SEARCH", "HEADER", "Message-ID", key)
+        typ, d = self.m.uid("SEARCH", "HEADER", "Message-ID", f'"{key}"')   # quoted: ( ) { in a Message-ID would break the command
         if typ != "OK": raise RuntimeError(f"{self.src}: All Mail header search failed ({typ})")
         hits = d[0].split() if d and d[0] else []
         # IMAP HEADER search matches substrings (a spammer's Message-ID "<a>" would match much real mail): compare exactly

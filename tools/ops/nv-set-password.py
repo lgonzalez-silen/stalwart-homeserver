@@ -21,7 +21,7 @@ if "--random" in sys.argv:
 else:
     pw = getpass.getpass(f"New password for {login}: ")
     if pw != getpass.getpass("Again: "): sys.exit("passwords don't match; nothing changed")
-    if len(pw) < 6: sys.exit("too short; nothing changed")
+    if len(pw) < 12: sys.exit("too short (at least 12 characters); nothing changed")
 
 # store a SHA-512 crypt hash ($6$), like the migrated accounts, not the plain password
 hashed = subprocess.run(["openssl", "passwd", "-6", "-stdin"], input=pw.encode(), capture_output=True, check=True).stdout.decode().strip()

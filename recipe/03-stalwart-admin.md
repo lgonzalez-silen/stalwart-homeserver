@@ -35,12 +35,13 @@ Open **https://<server.hostname>/admin** (only this address works: port 8080, th
   ```bash
   ssh root@<server.hostname>
   mkdir -p /run/systemd/system/stalwart.service.d && umask 077
-  printf '[Service]\nEnvironment=STALWART_RECOVERY_ADMIN=recover:%s\n' "$(openssl rand -hex 16)" \
-    > /run/systemd/system/stalwart.service.d/90-recover.conf
+  # the login goes in a root-only file: an Environment= line could be read by any local user through systemctl show
+  printf 'STALWART_RECOVERY_ADMIN=recover:%s\n' "$(openssl rand -hex 16)" > /run/nv-recover.env
+  printf '[Service]\nEnvironmentFile=/run/nv-recover.env\n' > /run/systemd/system/stalwart.service.d/90-recover.conf
   systemctl daemon-reload && systemctl restart stalwart
-  cat /run/systemd/system/stalwart.service.d/90-recover.conf   # sign in to /admin as recover / that value
+  cat /run/nv-recover.env   # sign in to /admin as recover / that value
   # ...reset the admin account's password or TOTP, then:
-  rm /run/systemd/system/stalwart.service.d/90-recover.conf && systemctl daemon-reload && systemctl restart stalwart
+  rm /run/systemd/system/stalwart.service.d/90-recover.conf /run/nv-recover.env && systemctl daemon-reload && systemctl restart stalwart
   ```
 
   (It lives under /run, so a reboot also removes it.) Tested with Stalwart's API, which is how recipe 03 uses it; signing

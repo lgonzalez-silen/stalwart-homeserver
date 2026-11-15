@@ -28,6 +28,7 @@ IDSMTP_SHA256=fc4b54a9a2dab6ec0c2232c26baab694667f1f1bd28630f944ea3cc509edffa7  
 SE_COMMIT=ca430f1e039186d58b57f8f6f5d5f2c1de8bf1e9
 SE_SHA256=5828f2b5a7a974828fa40f5c268966d70a004e71dd859578b06ce6c484a6dac3
 SIGNING_KEY=5AB2BAA141C4F7D5          # roundcube.net/download (long key ID)
+SIGNING_FPR=F3E4C04BB3DB5D4215C45F7F5AB2BAA141C4F7D5   # its full fingerprint (releases are signed by a subkey of it)
 HOST=${NV_WEBMAIL_HOSTNAME:-rc.$NV_SERVER_HOSTNAME}
 MAILHOST=$NV_SERVER_HOSTNAME
 TZ_PHP=${NV_SERVER_TIMEZONE:-UTC}
@@ -63,7 +64,8 @@ T=roundcubemail-$VER-complete.tar.gz
 [ -f $T.asc ] || curl -sSfLO https://github.com/roundcube/roundcubemail/releases/download/$VER/$T.asc
 export GNUPGHOME=/root/.gnupg-roundcube; mkdir -p -m 700 $GNUPGHOME
 gpg -q --list-keys $SIGNING_KEY >/dev/null 2>&1 || curl -sSfL https://roundcube.net/download/pubkey.asc | gpg -q --import
-gpg --status-fd 1 --verify $T.asc $T 2>/dev/null | grep -E "VALIDSIG|GOODSIG" | grep -q "$SIGNING_KEY" \
+# VALIDSIG's last field is the primary key's full fingerprint (GOODSIG also carries user-ID text, so match only this)
+gpg --status-fd 1 --verify $T.asc $T 2>/dev/null | awk '$2 == "VALIDSIG" { print $NF }' | grep -qx "$SIGNING_FPR" \
   && echo "signature OK ($SIGNING_KEY)" || { echo "SIGNATURE CHECK FAILED"; exit 1; }
 
 echo "== install to /var/www/roundcubemail-$VER (code root-owned, read-only for nginx)"

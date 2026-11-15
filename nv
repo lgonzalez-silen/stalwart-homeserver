@@ -38,10 +38,12 @@ def flatten(prefix, v, out):
         out[prefix] = str(v)
 
 
-def settings(site):
-    out = {}
-    flatten("NV", json.load(open(site)), out)
-    out["NV_SITE_JSON"] = open(site).read()   # recipe/09 installs it as /etc/nv/site.json for the tools
+def settings(site, server=True):
+    out, data = {}, json.load(open(site))
+    if server:   # backup.* is for tools/b2-setup.sh on this computer only: it never goes to the server
+        data.pop("backup", None)
+    flatten("NV", data, out)
+    out["NV_SITE_JSON"] = json.dumps(data, indent=2) + "\n" if server else open(site).read()   # recipe/09: /etc/nv/site.json
     # per-run switches like NV_SHOW=1 ./nv run ... are passed through (site.json values win on a clash)
     for k, v in os.environ.items():
         if k.startswith("NV_") and k not in ("NV_SITE", "NV_RENDER") and k not in out:
@@ -170,8 +172,8 @@ def status(env, html):
         sys.exit("no status yet: run recipe/09-ops.sh (installs nv-status), or wait for its first run\n" + r.stderr)
     st = json.loads(r.stdout)
     if not html:
-        print(f"{st['host']}  {st['generated']}  {st['attention']} item(s) need attention\n")
         clean = lambda t: re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", str(t))   # no terminal escapes from remote text
+        print(f"{clean(st['host'])}  {clean(st['generated'])}  {int(st['attention'])} item(s) need attention\n")
         for k in st["checks"]:
             print(f"{STATE_STYLE[k['state']][0]} {k['state'].upper():4}  {clean(k['title']):24} {clean(k['summary'])}")
         return
@@ -186,7 +188,7 @@ def status(env, html):
 <style>:root{{color-scheme:light dark}}body{{font:14px/1.4 -apple-system,system-ui,sans-serif;margin:24px;max-width:1100px}}
 table{{border-collapse:collapse;width:100%}}td,th{{padding:6px 10px;border-bottom:1px solid #8883;text-align:left;vertical-align:middle}}
 th{{font-weight:600;color:#888}}h1{{font-size:20px;margin:0 0 4px}}p{{color:#888;margin:0 0 16px}}</style>
-<h1>{H.escape(st["host"])}: {st["attention"]} item(s) need attention</h1><p>as of {H.escape(st["generated"])} (updates every 15 min)</p>
+<h1>{H.escape(st["host"])}: {int(st["attention"])} item(s) need attention</h1><p>as of {H.escape(st["generated"])} (updates every 15 min)</p>
 <table><tr><th>State</th><th>Area</th><th>Check</th><th>Detail</th><th>14 days</th></tr>{"".join(rows)}</table>"""
     f = tempfile.NamedTemporaryFile("w", suffix="-status.html", delete=False)
     f.write(page); f.close(); os.chmod(f.name, 0o600)
@@ -199,7 +201,7 @@ def main(argv):
         i = argv.index("--site"); site = argv[i + 1]; del argv[i:i + 2]
     if not argv or argv[0] not in ("run", "render", "diff", "sh", "env", "status"):
         sys.exit(__doc__)
-    env = settings(site)
+    env = settings(site, server=argv[0] not in ("sh", "env"))
     if argv[0] == "sh":
         sys.exit(subprocess.run([bash5(), argv[1], *argv[2:]], env={**os.environ, **env}).returncode)
     if argv[0] == "diff":
