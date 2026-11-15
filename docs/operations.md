@@ -91,6 +91,17 @@ If you ever have to change something by hand on the server, put it into the repo
 
 **OS:** automatic (dnf-automatic, daily, reboots when needed).
 
+**Everything else is pinned** in the recipe that installs it, next to the check that uses the pin. An upgrade is a
+reviewed commit changing these lines:
+
+| Download | Pins | Where |
+|---|---|---|
+| Stalwart | `STALWART_VER`, `STALWART_SHA256` (and the installer's `PIN`) | `recipe/03-stalwart.sh` |
+| Roundcube | `VER` (signature checked against `SIGNING_FPR`) | `recipe/07-roundcube.sh` |
+| identity_smtp plugin | `IDSMTP_VER`, `IDSMTP_SHA256` | `recipe/07-roundcube.sh` |
+| Stretched Elastic skin | `SE_COMMIT`, `SE_SHA256` | `recipe/07-roundcube.sh` |
+| restic | `RESTIC_VER` (signature checked against `RESTIC_SIGNER`) | `recipe/08-backup.sh` |
+
 **Stalwart:** when the weekly release check mails you (new versions also show on `./nv status`). Read every release's notes between your version and the new one
 (watch for "breaking" and migration steps). Upgrade right after the nightly backup, following the procedure in
 `recipe/03-stalwart.sh`'s header: it takes an instant copy-on-write snapshot of the data directory first, so going
