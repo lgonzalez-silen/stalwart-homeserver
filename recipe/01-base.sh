@@ -34,7 +34,9 @@ add_line /etc/hosts "$PUBLIC_IP	$HOST $SHORT"
 [ -n "$PUBLIC_IP6" ] && add_line /etc/hosts "$PUBLIC_IP6	$HOST $SHORT"   # IPv6 only if the server has it
 
 echo "== packages + updates"
-dnf -y -q upgrade
+# --nobest: when EPEL briefly ships an update that needs a newer AlmaLinux package than exists yet (seen with
+# python3-pyOpenSSL), upgrade everything else and keep that one at its current version instead of failing
+dnf -y -q upgrade --nobest
 dnf -y -q install epel-release
 dnf -y -q install firewalld dnf-automatic unbound bind-utils policycoreutils-python-utils \
   vim-enhanced tar rsync jq lsof tmux
@@ -163,7 +165,8 @@ grubby --update-kernel ALL --remove-args selinux >/dev/null 2>&1 || true
 echo "== summary"
 hostnamectl --static
 grep -E '^(nameserver|search)' /etc/resolv.conf
-dig +short +time=10 +tries=3 @127.0.0.1 2.0.0.127.zen.spamhaus.org A | head -1 | sed 's/^/spamhaus test (expect 127.0.0.x): /'
+SPAMHAUS=$(dig +short +time=10 +tries=3 @127.0.0.1 2.0.0.127.zen.spamhaus.org A | head -1)
+echo "spamhaus test (expect 127.0.0.x): ${SPAMHAUS:-NO ANSWER (right after a resolver restart that can be normal: run the dig again in a minute)}"
 firewall-cmd --zone=public --list-services
 sshd -T | grep -E '^(passwordauthentication|permitrootlogin) '
 swapon --show --noheadings
