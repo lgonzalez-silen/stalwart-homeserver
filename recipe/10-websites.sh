@@ -67,6 +67,7 @@ server {
     index index.html index.htm;
     autoindex off;
 $extra
+    disable_symlinks on;   # a symlink in a site's folder never serves a file from outside it (des_key, the webmail DB)
     location ~ /\. { deny all; }
     location / { try_files \$uri \$uri/ =404; }
 }

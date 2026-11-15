@@ -31,6 +31,7 @@
 #   - Admin account: TOTP two-factor, by hand (recipe/03-stalwart-admin.md)
 
 KEYFILE=/root/.secrets/laptop-api.key
+RESP=/tmp/nv-05-render.$$; live && RESP=$(mktemp)   # the settings request's answer (a private temp file on the server)
 J() {   # J <json>: one JMAP request to the admin API
   if live; then
     # the key goes to curl as a header file, never on its command line (visible to every local user in ps)
@@ -68,12 +69,12 @@ if [ "${NV_SHOW:-}" != 1 ]; then
       \"failureSendFrequency\":{\"match\":{},\"else\":\"disable\"}}}},\"r\"],
     [\"x:TlsReportSettings/set\",{\"accountId\":\"b\",\"update\":{\"singleton\":{
       \"sendFrequency\":{\"match\":{},\"else\":\"disable\"}}}},\"t\"]]}" \
-    > /tmp/nv-07.$$ || { echo "settings request failed (HTTP error)"; exit 1; }
+    > "$RESP" || { echo "settings request failed (HTTP error)"; exit 1; }
   if live; then
-    jq -c '.methodResponses[] | [.[0], (.[1].updated // .[1].notUpdated)]' /tmp/nv-07.$$
+    jq -c '.methodResponses[] | [.[0], (.[1].updated // .[1].notUpdated)]' "$RESP"
     # a setting Stalwart rejected (renamed field after an upgrade, bad value) must not look like success
-    bad=$(jq '[.methodResponses[] | select(.[0] == "error" or (.[1].notUpdated // {} | length) > 0)] | length' /tmp/nv-07.$$)
-    rm -f /tmp/nv-07.$$
+    bad=$(jq '[.methodResponses[] | select(.[0] == "error" or (.[1].notUpdated // {} | length) > 0)] | length' "$RESP")
+    rm -f "$RESP"
     [ "$bad" = 0 ] || { echo "Stalwart REJECTED $bad of the settings above: nothing else is wrong, but fix these"; exit 1; }
   fi
 fi
@@ -88,7 +89,7 @@ if live && ! systemctl is-active --quiet nginx; then
   CUT=yes
 fi
 if live; then
-  repo_file tools/ops/stalwart-network.py | python3 - "$CUT" "${NV_SHOW:-}" || exit 1
+  repo_file tools/ops/stalwart-network.py | python3 -I - "$CUT" "${NV_SHOW:-}" || exit 1
 fi
 if [ "$CUT" = yes ] && [ "${NV_SHOW:-}" != 1 ]; then
   echo "== cutover: restart Stalwart (listener changes apply now), start nginx"

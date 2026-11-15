@@ -55,6 +55,10 @@ Quiet is normal now. `./nv status` is how you check that quiet means "fine".
 aliases. Then set their password: `ssh -t root@<server> nv-set-password <login>`. They type nothing into any chat;
 you (or they) type it at the prompt. The tool tests a real IMAP login before it says OK.
 
+**Passwords: use long ones (12+ characters, which nv-set-password requires).** Webmail logins reach Stalwart from
+the server itself, so Stalwart's ban on repeated failed logins can't apply to them; nginx still allows only 10
+login attempts a minute per address. Length is what stops guessing spread over many addresses.
+
 **Change a password.** Same command. Typing the same password again is fine: it re-stores it with a strong hash
 (useful after a migration from an old server with weak hashes).
 
@@ -102,7 +106,8 @@ you use the compact skin, re-run `07b` afterwards.
 
 Nightly to B2, encrypted on the server before upload, kept 14 daily / 8 weekly / 12 monthly. The B2 key can't delete
 files, only hide them, and B2 removes hidden files after 30 days: someone with root on the server can't destroy
-your history for 30 days, which is your window to notice and react (the monthly check is one signal). For more, keep
+your history for 30 days, which is your window to notice and react (the monthly check is one signal). After that
+they can: if you ever suspect a break-in, restore or copy the backups within those 30 days. For more, keep
 an occasional offline copy. What's backed up: Stalwart's data (all
 mail, accounts, settings, DKIM keys) and Roundcube's database. Not backed up, on purpose: configuration (the recipes
 rebuild it) and secrets (your password manager has them).

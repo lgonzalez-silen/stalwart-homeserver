@@ -25,15 +25,20 @@
 #        install -m 755 <new binary> /usr/local/bin/stalwart
 #        echo STALWART_UPDATE_ROLE_PERMISSIONS=true >> /etc/stalwart/stalwart.env   (adds new permissions to default roles)
 #        systemctl start stalwart; check x:Role/get; remove that env line; systemctl restart stalwart
-#   4. Check: log has no WARN/ERROR after "version = <new>", IMAP/SMTP/webmail, a webmail send to Gmail
+#   4. In this recipe, set STALWART_VER and STALWART_SHA256 to the new release (what a fresh build installs).
+#   5. Check: log has no WARN/ERROR after "version = <new>", IMAP/SMTP/webmail, a webmail send to Gmail
 #      (DKIM/SPF/DMARC pass), nv-fetch + nv-spam-mirror runs, /admin loads.
 #   Rollback: systemctl stop stalwart; mv /var/lib/stalwart{,-failed}; mv /var/lib/stalwart-pre-<new> /var/lib/stalwart;
 #             cp -a /usr/local/bin/stalwart-<old> /usr/local/bin/stalwart; cp -a /etc/stalwart.bak-pre-<new>/. /etc/stalwart/; start.
 #   Delete the -pre copy and the old binary after a quiet week.
 
 HOST=$NV_SERVER_HOSTNAME
+# First install: this release, this binary (sha256 of the x86_64 gnu build, checked against GitHub's build attestation
+# when it was pinned). Later versions: the UPGRADES procedure above.
+STALWART_VER=1.1.0
+STALWART_SHA256=97dce1a2d60e09f2cee8fb74f2514da5a576cc79e5204d16d7fcdade181ba05d
 
-echo "== installer (official; downloads latest release from GitHub)"
+echo "== installer (official), pinned to Stalwart $STALWART_VER"
 mkdir -p /root/installs && { live && cd /root/installs; }
 # The installer runs as root, so it is pinned: if Stalwart changes it, the recipe stops. Read the new script, then
 # set NV_STALWART_INSTALLER_SHA256=<new hash> for that run (and update the pin here).
@@ -43,7 +48,13 @@ if ! command -v stalwart >/dev/null; then   # only checked when it would actuall
   if live && ! echo "$PIN  stalwart-install.sh" | sha256sum -c --quiet; then
     echo "stalwart-install.sh changed (sha256 $(sha256sum stalwart-install.sh | cut -c1-64)): review it before trusting it"; exit 1
   fi
+  # it always fetches the latest release: point it at the pinned one, then check the binary it installed
+  sed -i "s#releases/latest/download#releases/download/v$STALWART_VER#" stalwart-install.sh
   sh stalwart-install.sh
+  if live && ! echo "$STALWART_SHA256  /usr/local/bin/stalwart" | sha256sum -c --quiet; then
+    systemctl stop stalwart; mv /usr/local/bin/stalwart /root/installs/stalwart.REJECTED
+    echo "the installed Stalwart binary isn't the pinned $STALWART_VER build: stopped, moved to /root/installs/stalwart.REJECTED"; exit 1
+  fi
 fi
 stalwart --version || true
 
@@ -69,7 +80,7 @@ ls -l /etc/stalwart/tls/
 
 echo "== first setup (instead of the WebUI wizard) and the API key, when not done yet"
 if live; then
-  repo_file tools/ops/stalwart-bootstrap.py | python3 - "$HOST" "${NV_MAIL_DEFAULT_DOMAIN:-}" || exit 1
+  repo_file tools/ops/stalwart-bootstrap.py | python3 -I - "$HOST" "${NV_MAIL_DEFAULT_DOMAIN:-}" || exit 1
 fi
 
 echo "== status"
