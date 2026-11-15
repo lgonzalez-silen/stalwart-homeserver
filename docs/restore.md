@@ -6,9 +6,8 @@ Keep an offline copy of this page with your password manager. You'll need it on 
 (all mail, accounts, settings, DKIM keys) and Roundcube's database. No configuration and no secrets: the recipes
 rebuild the configuration, and your password manager holds the secrets.
 
-**What you need:** the contents of `/root/.secrets/restic.env` (RESTIC_REPOSITORY, RESTIC_PASSWORD, B2_ACCOUNT_ID,
-B2_ACCOUNT_KEY), kept in your password manager. **Without RESTIC_PASSWORD the backups can't be read by anyone,
-including you.**
+**What you need:** the restic password and your B2 master key, in your password manager (`tools/b2-setup.sh` put
+the password there). **Without the restic password the backups can't be read by anyone, including you.**
 
 For scale: on the server this came from, restoring an 8 GB snapshot took about a minute and a half.
 
@@ -21,7 +20,7 @@ For scale: on the server this came from, restoring an 8 GB snapshot took about a
    back with the data, except the API key the tools use (step 5). Skip `recipe/03-stalwart-admin.md`: the restored
    admin account keeps its password and two-factor.
 2. Stop the services that use the data: `ssh root@<server> 'systemctl stop stalwart php-fpm'`
-3. Put `/root/.secrets/restic.env` back (mode 0600, fields from your password manager), then run recipe 08. It
+3. `./nv sh tools/b2-setup.sh` (a new key for the new server, the same restic password), then run recipe 08. It
    installs restic and the timers, and it won't re-create an existing repository. **Then stop the nightly backup
    until the restore is done:** `ssh root@<server> systemctl stop nv-backup.timer`. Otherwise a run in between saves
    the empty new server as the newest snapshot (and "latest" would then restore nothing).

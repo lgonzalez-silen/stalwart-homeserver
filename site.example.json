@@ -26,10 +26,17 @@
     "local_skins": [],
     "compact_skin_source": ""
   },
+  "backup": {
+    "bucket": "example-mail-backup",
+    "path": "nv",
+    "b2_master_key_id": "op://Private/Backblaze/master application key id",
+    "b2_master_key": "op://Private/Backblaze/master application key",
+    "restic_password": "op://Private/mail restic password/password",
+    "op_account": ""
+  },
   "alerts": {
     "to": "alice@example.com",
-    "from": "alerts@example.com",
-    "account": "c"
+    "from": "alerts@example.com"
   },
   "websites": [
     {"name": "example.com", "cert": "dns", "source": "~/sites/example.com", "webmail_redirect": false}

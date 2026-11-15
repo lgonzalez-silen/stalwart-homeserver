@@ -43,7 +43,7 @@ them.
 - Some commands are the owner's to run in their own terminal, because they print a secret or ask for a typed
   confirmation: give them the exact command and wait. Never run them yourself, and never pipe an answer into a
   prompt (`echo yes | ...`). They include: `dns/push`, `nv-set-password`, `nv-fetch-secret`, reading
-  `/root/.secrets/stalwart-admin`, `b2 key create`, and anything that reads the password manager (`op read`).
+  `/root/.secrets/stalwart-admin`, `tools/b2-setup.sh`, `b2 key create`, and anything that reads the password manager (`op read`).
 - Never `cat`, `grep` or diff anything under `/root/.secrets/` or Roundcube's `des_key`. To check that one exists,
   use `test -s` or `stat`.
 

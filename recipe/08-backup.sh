@@ -1,9 +1,10 @@
 #!/bin/bash
 # recipe/08-backup.sh — nightly encrypted backups of the server's DATA to Backblaze B2 with restic.
 # Run from your computer:  ./nv run recipe/08-backup.sh
-# Settings: alerts.to (address that receives alerts), alerts.from (sender shown on alerts),
-# alerts.account (Stalwart account id that owns alerts.to; alerts are put straight into its Inbox). Create that
-# account in the WebUI first; to list account ids see tools/google/README.md ("account").
+# Settings: alerts.to (address that receives alerts), alerts.from (sender shown on alerts). Alerts are put straight
+# into the Inbox of the account that has alerts.to as its address or as an alias; if there is none, this recipe
+# creates one (no password: set one with nv-set-password to read it in webmail). Optional alerts.account: a
+# Stalwart account id to use instead (ids: tools/google/README.md, "account").
 #
 # Design: two places only (server + B2). Data only, no /etc and no secrets: everything else is
 # rebuilt by the recipes. Backed up:
@@ -15,24 +16,17 @@
 # B2 side (set up once from your computer with the B2 master key): a private bucket with lifecycle
 # "hidden files deleted after 30 days"; an application key that is bucket-only with list/read/write but
 # NO deleteFiles (restic hides instead of deleting, so an attacker with root on the server can't destroy
-# history for 30 days). B2's web form can't make that key ("Read and Write" includes deleteFiles); use its CLI:
-# These are the owner's commands, in their own terminal (the key secret is printed once: straight into the password manager):
-#   b2 account authorize                      (master key, on your computer; the b2 CLI: brew install b2-tools)
-#   b2 bucket create --lifecycle-rule '{"daysFromHidingToDeleting": 30, "daysFromUploadingToHiding": null, "fileNamePrefix": ""}' <bucket> allPrivate
-#   b2 key create --bucket <bucket> nv-restic listBuckets,listFiles,readFiles,writeFiles
+# history for 30 days). B2's web form can't make that key ("Read and Write" includes deleteFiles). All of it, and
+# /root/.secrets/restic.env on the server, in one command of yours (it reads your password manager; settings
+# backup.* in site.json, see the tool's header):
+#   ./nv sh tools/b2-setup.sh --dry      then without --dry
 # This recipe checks the key's permissions every run and stops if it can do more than list/read/write files.
-# Secrets: /root/.secrets/restic.env, mode 0600; keep a copy in your password manager. Without RESTIC_PASSWORD the
-# backups are unreadable. Four lines:
-#   RESTIC_REPOSITORY=b2:<bucket>:nv
-#   RESTIC_PASSWORD=<long random, e.g. from: openssl rand -base64 30>
-#   B2_ACCOUNT_ID=<the new key's keyID>
-#   B2_ACCOUNT_KEY=<the new key's applicationKey>
-# Put it on the server from your own terminal: ssh root@<server> 'umask 077; cat > /root/.secrets/restic.env', paste
-# the four lines, then Ctrl-D.
+# Without the restic password (kept in your password manager by the tool) the backups are unreadable.
+# By hand instead: restic.env is four lines, mode 0600: RESTIC_REPOSITORY=b2:<bucket>:<path>, RESTIC_PASSWORD,
+# B2_ACCOUNT_ID and B2_ACCOUNT_KEY (the key's id and secret).
 
 RESTIC_VER=0.19.1
 RESTIC_SIGNER=CF8F18F2844575973F79D4E191A6868BD3F7A907   # restic.net/gpg-key-alex.asc
-ALERT_ACCOUNT=${NV_ALERTS_ACCOUNT:?set alerts.account in site.json}   # Stalwart account id of ALERT_TO
 ALERT_TO=${NV_ALERTS_TO:?set alerts.to in site.json}
 ALERT_FROM=${NV_ALERTS_FROM:?set alerts.from in site.json}             # sender shown on every alert (backups, failures, Junk spikes)
 HOST=$NV_SERVER_HOSTNAME
@@ -55,6 +49,43 @@ fi
 restic version
 
 live && { [ -s /root/.secrets/restic.env ] || { echo "missing /root/.secrets/restic.env (see header)"; exit 1; }; }
+
+echo "== alerts account (owner of $ALERT_TO)"
+if live; then
+  ALERT_ACCOUNT=$(ALERT_TO="$ALERT_TO" ALERT_ACCOUNT="${NV_ALERTS_ACCOUNT:-}" python3 -I - <<'PY'
+import json, os, sys, urllib.request
+K = open("/root/.secrets/laptop-api.key").read().strip()
+def j(calls):
+    r = urllib.request.Request("http://127.0.0.1:8080/jmap/", data=json.dumps({"using": ["urn:ietf:params:jmap:core",
+        "urn:stalwart:jmap"], "methodCalls": calls}).encode(), headers={"Authorization": "Bearer " + K, "Content-Type": "application/json"})
+    out = json.load(urllib.request.urlopen(r, timeout=30))["methodResponses"]
+    if out[0][0] == "error" or out[0][1].get("notCreated"):
+        sys.exit(f"Stalwart refused: {json.dumps(out[0][1])[:300]}")
+    return out[0][1]
+to, want = os.environ["ALERT_TO"].lower(), os.environ["ALERT_ACCOUNT"]
+doms = {d["id"]: d["name"].lower() for d in j([["x:Domain/get", {"ids": None, "properties": ["name"]}, "d"]])["list"]}
+accts = j([["x:Account/get", {"ids": None, "properties": ["name", "emailAddress", "aliases"]}, "a"]])["list"]
+if want:   # set in site.json: use it, but say so if it doesn't own the address
+    a = next((a for a in accts if a["id"] == want), None) or sys.exit(f"alerts.account {want}: no such account")
+    print(f"using alerts.account {want} ({a['name']})", file=sys.stderr); print(want); sys.exit()
+own = lambda a: {(a.get("emailAddress") or "").lower()} | {f'{x["name"]}@{doms.get(x["domainId"], "")}'.lower()
+                 for x in (a.get("aliases") or {}).values() if x.get("enable", True)}
+hits = [a for a in accts if to in own(a)]
+if len(hits) > 1:
+    sys.exit(f"{to} belongs to several accounts ({', '.join(a['name'] for a in hits)}): set alerts.account")
+if hits:
+    print(f"{to}: account {hits[0]['id']} ({hits[0]['name']})", file=sys.stderr); print(hits[0]["id"]); sys.exit()
+local, _, dom = to.partition("@")
+did = next((i for i, n in doms.items() if n == dom), None) or sys.exit(f"{dom} isn't a domain in Stalwart: add it, or change alerts.to")
+new = j([["x:Account/set", {"create": {"n": {"@type": "User", "name": local, "domainId": did,
+          "description": "alerts (recipe/08)"}}}, "c"]])["created"]["n"]["id"]
+print(f"{to}: created account {new} (no password; nv-set-password {local} to read it in webmail)", file=sys.stderr)
+print(new)
+PY
+) || exit 1
+else
+  ALERT_ACCOUNT="<alerts account id>"
+fi
 install -d -m 700 /var/backups/nv /var/cache/restic
 
 echo "== scripts"

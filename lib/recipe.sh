@@ -73,6 +73,7 @@ else
     printf '%s\n' "$out" | grep -F '[warn]' >&2 || true   # warnings (e.g. a duplicate server_name) stay visible
     for p in "${list[@]}"; do rm -f "$p.nv-prev" "$p.nv-new"; done
     : > "$_NGINX_PUT"
-    case ${1:-reload} in none) ;; *) systemctl "${1:-reload}" nginx ;; esac
+    # reload only signals nginx: give the new workers a moment, or a check right after can still meet the old config
+    case ${1:-reload} in none) ;; *) systemctl "${1:-reload}" nginx; sleep 2 ;; esac
   }
 fi

@@ -124,9 +124,9 @@ yours to do, not your agent's: they need your accounts, your password manager or
    (`ssh -o ControlMaster=no -o ControlPath=none root@<server> true`) before going on.
    Then **(you)** save the admin password and turn on two-factor
    ([`recipe/03-stalwart-admin.md`](recipe/03-stalwart-admin.md)). Then `06-mail-domain-certs.sh`, `07-roundcube.sh`.
-5. Backups and operations. **(you)** First, in Stalwart's WebUI, create the account that will receive alerts
-   (`alerts.to`) and put its id in `alerts.account` (how to find it: [`tools/google/README.md`](tools/google/README.md),
-   "account"). **(you)** Create the B2 bucket, its key and `restic.env` (recipe 08's header). Then `08-backup.sh` and
+5. Backups and operations. **(you)** `./nv sh tools/b2-setup.sh` (the B2 bucket, its key and `restic.env`; settings
+   `backup.*`, see the tool's header). Then
+   `08-backup.sh` (it finds or creates the account that receives alerts, `alerts.to`) and
    `09-ops.sh`. **Test a restore** ([`docs/restore.md`](docs/restore.md), "Test a restore") before you move real mail in.
 6. **Mail DNS** for each domain: DKIM (values from Stalwart's WebUI, Domains › DNS records: they're public, so they
    can be pasted into a chat), MTA-STS and TLS-RPT TXT records, the SRV records and `_ua-auto-config`, then
@@ -154,7 +154,8 @@ yours to do, not your agent's: they need your accounts, your password manager or
 | `webmail.hostname`, `product_name` | Roundcube's address and the name on its login page |
 | `webmail.identity_smtp` | optional, default false: let each webmail identity send through its own outside SMTP server (third-party plugin; recipe 07) |
 | `webmail.local_plugins`, `local_skins`, `compact_skin_source` | the optional skin and its plugins (recipe 07b) |
-| `alerts.to`, `from`, `account` | who gets alerts, the sender shown, and the Stalwart account id of `to` |
+| `backup.bucket`, `path`, `b2_master_key_id`, `b2_master_key`, `restic_password`, `op_account` | for `tools/b2-setup.sh`: the B2 bucket, the folder in it, and 1Password references (`op://…`) to the master key and the restic password (empty: asked at a hidden prompt) |
+| `alerts.to`, `from`, `account` | who gets alerts and the sender shown; `account` is optional: the Stalwart account id to deliver to, when recipe 08 shouldn't pick the owner of `to` |
 | `websites[]` | `name`, `cert` (`dns` or `http`), `source` (folder on your computer), `webmail_redirect` |
 | `google.sources[]` | `name`, `user`, `account`, `own`, optional `enabled`, `spam_mirror`, `keep_days` ([details](tools/google/README.md)) |
 | `junk_report.detail_accounts`, `keep_days` | accounts whose Junk is listed message by message, and whose Junk older than `keep_days` is deleted for good |
