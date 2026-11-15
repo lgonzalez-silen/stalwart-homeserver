@@ -25,7 +25,12 @@ echo "== certbot + cloudflare plugin"
 # From the EPEL repository of THIS OS minor version (epel-10.2 on AlmaLinux 10.2): plain "epel" follows RHEL's
 # newest minor, and right after a RHEL release its certbot needs libraries AlmaLinux doesn't have yet (seen
 # 2026-11-14: EPEL built for 10.3, AlmaLinux still 10.2, install fails on python3-cryptography).
-OSV=$(. /etc/os-release; echo "$VERSION_ID")
+if live; then
+  OSV=$(. /etc/os-release; echo "${VERSION_ID:-}")
+  [ -n "$OSV" ] || { echo "no VERSION_ID in /etc/os-release"; exit 1; }
+else
+  OSV="<server's VERSION_ID>"   # a render runs on your computer, whose OS isn't the server's
+fi
 dnf -y -q --setopt=epel.baseurl= --setopt="epel.metalink=https://mirrors.fedoraproject.org/metalink?repo=epel-$OSV&arch=$(uname -m)" \
   install certbot python3-certbot-dns-cloudflare
 
