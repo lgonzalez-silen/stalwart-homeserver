@@ -41,7 +41,9 @@ them.
   server (`/root/.secrets/`, mode 0600) or from the owner's password manager.
 - Passwords are typed by the owner at a no-echo prompt. They never pass through you.
 - Some commands are the owner's to run in their own terminal, because they print a secret or ask for a typed
-  confirmation: give them the exact command and wait. Never run them yourself, and never pipe an answer into a
+  confirmation: give them the exact command and wait. Their own terminal means a real one, outside your session: a
+  shortcut that runs the command inside your chat (Claude Code's `!` prefix, for example) can't answer a prompt, so
+  the command stops at it. Never run them yourself, and never pipe an answer into a
   prompt (`echo yes | ...`). They include: `dns/push`, `nv-set-password`, `nv-fetch-secret`, reading
   `/root/.secrets/stalwart-admin`, `tools/b2-setup.sh`, `b2 key create`, and anything that reads the password manager (`op read`, `bw get`, `pass`, …).
 - Never `cat`, `grep` or diff anything under `/root/.secrets/` or Roundcube's `des_key`. To check that one exists,

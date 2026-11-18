@@ -1,6 +1,7 @@
 #!/bin/bash
 # dns/push — preview, ask for a typed "yes", back up the zones, then apply.
 # Records missing from dnsconfig.js are DELETED at the provider: always read the preview.
+# Run it in a real terminal: the "yes" prompt needs your keyboard (through an agent's chat it stops at the prompt).
 set -euo pipefail
 cd "$(dirname "$0")"
 [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || CLOUDFLARE_API_TOKEN=$(sed -nE 's/^dns_cloudflare_api_token *= *//p' "${CF_INI:?set CLOUDFLARE_API_TOKEN or CF_INI}")
