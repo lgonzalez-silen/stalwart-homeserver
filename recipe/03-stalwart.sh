@@ -35,8 +35,8 @@
 HOST=$NV_SERVER_HOSTNAME
 # First install: this release, this binary (sha256 of the x86_64 gnu build, checked against GitHub's build attestation
 # when it was pinned). Later versions: the UPGRADES procedure above.
-STALWART_VER=1.1.0
-STALWART_SHA256=97dce1a2d60e09f2cee8fb74f2514da5a576cc79e5204d16d7fcdade181ba05d
+STALWART_VER=1.1.1   # 2026-11-18 (attestation checked; running on the server this setup was tested on)
+STALWART_SHA256=d68eb9b2f5f38ade994edb1c6f76f068501a29ccbdfb9f11a39aa3253153fd4c
 
 echo "== installer (official), pinned to Stalwart $STALWART_VER"
 mkdir -p /root/installs && { live && cd /root/installs; }

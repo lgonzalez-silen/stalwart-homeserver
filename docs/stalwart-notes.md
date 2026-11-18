@@ -1,6 +1,6 @@
 # Stalwart notes
 
-Behaviour of Stalwart 1.x worth knowing, learned running it (current as of 1.1.0). Each note says where the recipes
+Behaviour of Stalwart 1.x worth knowing, learned running it (current as of 1.1.1). Each note says where the recipes
 handle it.
 
 ## Configuration
@@ -43,9 +43,8 @@ handle it.
   train task.
 - **Forwarded mail scores badly** (SPF fails for the original sender, recipients don't match). Pulling mail from the
   other provider (the Google module) avoids it instead of fighting it.
-- **The `ClassifySpam` action can't express the null sender `<>`** in 1.1.0 (bounces), so such messages can't be
-  tested through it. Fixed upstream for the next weekly release after 1.1.0: `"mailFrom": null` (or leaving it out)
-  is classified as `MAIL FROM:<>`.
+- **`ClassifySpam` and the null sender `<>`** (bounces): from 1.1.1, `"mailFrom": null` (or leaving it out) is
+  classified as `MAIL FROM:<>`; 1.1.0 refused every spelling of it.
 
 ## Security
 
