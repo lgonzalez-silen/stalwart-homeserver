@@ -13,11 +13,15 @@
 # Token: a Cloudflare user token with Zone.DNS:Edit on the zone of server.hostname only, IP-filtered to the
 # server's IPv4, no expiry.
 # Settings: server.hostname; certs.extra_names (optional: more names on the same cert, e.g. an existing IMAP/SMTP
-# name your clients already use, so they keep working when it moves to this server).
+# name your clients already use, so they keep working when it moves to this server). webmail.hostname is added by
+# itself when *.<server.hostname> doesn't cover it (e.g. webmail.example.com); a name in another zone needs the
+# token to cover that zone too.
 
 CERT=$NV_SERVER_HOSTNAME
 EXTRA=""
 for n in ${NV_CERTS_EXTRA_NAMES:-}; do EXTRA="$EXTRA -d $n"; done
+W=${NV_WEBMAIL_HOSTNAME:-}
+if [ -n "$W" ] && [ "${W#*.}" != "$CERT" ] && [[ " ${NV_CERTS_EXTRA_NAMES:-} " != *" $W "* ]]; then EXTRA="$EXTRA -d $W"; fi
 CREDS=/root/.secrets/cloudflare.ini
 
 live && { [ -s "$CREDS" ] || { echo "missing $CREDS (see header)"; exit 1; }; }
@@ -36,7 +40,7 @@ fi
 dnf -y -q --setopt=epel.baseurl= --setopt="epel.metalink=https://mirrors.fedoraproject.org/metalink?repo=epel-$OSV&arch=$(uname -m)" \
   install certbot python3-certbot-dns-cloudflare
 
-echo "== issue (or keep) $CERT + *.$CERT ${NV_CERTS_EXTRA_NAMES:-}"
+echo "== issue (or keep) $CERT + *.$CERT${EXTRA// -d / }"
 certbot certonly -n --agree-tos --register-unsafely-without-email \
   --dns-cloudflare --dns-cloudflare-credentials "$CREDS" \
   --dns-cloudflare-propagation-seconds 30 \
@@ -62,7 +66,7 @@ EOF
 
 echo "== renewal timer + dry run"
 systemctl enable --now certbot-renew.timer
-certbot renew --dry-run -q && echo "renew dry-run OK"
+certbot renew --dry-run -q --no-random-sleep-on-renew && echo "renew dry-run OK"   # no wait: holding the lock for minutes would fail a timer run that starts meanwhile
 
 echo "== summary"
 certbot certificates 2>/dev/null | grep -E "Certificate Name|Domains|Expiry|Key Type"
